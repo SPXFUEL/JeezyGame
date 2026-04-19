@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Memory Spel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+(function scaleCanvas() {
+  const ratio = Math.min(window.innerWidth / 390, window.innerHeight / 700);
+  canvas.style.width = (390 * ratio) + 'px';
+  canvas.style.height = (700 * ratio) + 'px';
+})();
+
+// ---- AUDIO ----
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function getAC() { if (!audioCtx) audioCtx = new AudioCtx(); return audioCtx; }
+
+function playFlip() {
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.frequency.value = 440; osc.type = 'sine';
+    g.gain.setValueAtTime(0.15, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.1);
+    osc.start(ac.currentTime); osc.stop(ac.currentTime + 0.1);
+  } catch(e) {}
+}
+
+function playMatch() {
+  try {
+    const ac = getAC();
+    [523, 659, 784].forEach((f, i) => {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.connect(g); g.connect(ac.destination);
+      osc.frequency.value = f; osc.type = 'sine';
+      const t = ac.currentTime + i * 0.1;
+      g.gain.setValueAtTime(0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.start(t); osc.stop(t + 0.25);
+    });
+  } catch(e) {}
+}
+
+function playNoMatch() {
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.frequency.value = 250; osc.type = 'square';
+    g.gain.setValueAtTime(0.15, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+    osc.start(ac.currentTime); osc.stop(ac.currentTime + 0.3);
+  } catch(e) {}
+}
+
+function playWin() {
+  try {
+    const ac = getAC();
+    const melody = [523, 659, 784, 1047, 784, 1047, 1319, 1047];
+    melody.forEach((f, i) => {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.connect(g); g.connect(ac.destination);
+      osc.frequency.value = f; osc.type = 'sine';
+      const t = ac.currentTime + i * 0.13;
+      g.gain.setValueAtTime(0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.start(t); osc.stop(t + 0.25);
+    });
+  } catch(e) {}
+}
+
+// ---- DATA ----
+const EMOJIS = ['🐶','🐱','🐸','🦋','🌸','⭐','🎈','🍎'];
+
+// ---- STATE ----
+let cards = [];
+let flipped = [];    // max 2 indices
+let matched = [];    // set of matched indices
+let attempts = 0;
+let startTime = 0;
+let elapsed = 0;
+let gameOver = false;
+let lockInput = false;
+let lockTimer = 0;
+let particles = [];
+let flipAnimations = {}; // cardIdx -> { progress: 0..1, direction: 'open'|'close' }
+let shake = {}; // cardIdx -> { timer }
+
+const CARD_W = 80;
+const CARD_H = 80;
+const COLS = 4;
+const ROWS = 4;
+const GRID_X = (390 - COLS * CARD_W - (COLS - 1) * 8) / 2;
+const GRID_Y = 130;
+const GAP = 8;
+
+function initGame() {
+  const deck = [...EMOJIS, ...EMOJIS];
+  // shuffle
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  cards = deck.map((e, i) => ({
+    emoji: e,
+    idx: i,
+    faceUp: false,
+    matched: false
+  }));
+  flipped = [];
+  matched = [];
+  attempts = 0;
+  startTime = Date.now();
+  elapsed = 0;
+  gameOver = false;
+  lockInput = false;
+  lockTimer = 0;
+  particles = [];
+  flipAnimations = {};
+  shake = {};
+}
+
+function cardXY(idx) {
+  const col = idx % COLS;
+  const row = Math.floor(idx / COLS);
+  return {
+    x: GRID_X + col * (CARD_W + GAP),
+    y: GRID_Y + row * (CARD_H + GAP)
+  };
+}
+
+// ---- INPUT ----
+function getCanvasXY(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = 390 / rect.width;
+  const scaleY = 700 / rect.height;
+  let cx, cy;
+  if (e.touches) {
+    cx = (e.touches[0].clientX - rect.left) * scaleX;
+    cy = (e.touches[0].clientY - rect.top) * scaleY;
+  } else {
+    cx = (e.clientX - rect.left) * scaleX;
+    cy = (e.clientY - rect.top) * scaleY;
+  }
+  return { x: cx, y: cy };
+}
+
+function handleInput(e) {
+  e.preventDefault();
+  const { x, y } = getCanvasXY(e);
+
+  if (gameOver) {
+    // Restart knop
+    if (x >= 95 && x <= 295 && y >= 570 && y <= 640) {
+      initGame();
+    }
+    return;
+  }
+
+  if (lockInput) return;
+  if (flipped.length >= 2) return;
+
+  for (let i = 0; i < 16; i++) {
+    const pos = cardXY(i);
+    if (x >= pos.x && x <= pos.x + CARD_W && y >= pos.y && y <= pos.y + CARD_H) {
+      const card = cards[i];
+      if (card.matched || card.faceUp) return;
+      if (flipped.includes(i)) return;
+
+      card.faceUp = true;
+      flipped.push(i);
+      playFlip();
+
+      // Start flip animation
+      flipAnimations[i] = { progress: 0, direction: 'open' };
+
+      if (flipped.length === 2) {
+        attempts++;
+        const [a, b] = flipped;
+        if (cards[a].emoji === cards[b].emoji) {
+          // Match!
+          setTimeout(() => {
+            cards[a].matched = true;
+            cards[b].matched = true;
+            matched.push(a, b);
+            flipped = [];
+            playMatch();
+            spawnParticles(
+              (cardXY(a).x + cardXY(b).x) / 2 + CARD_W / 2,
+              (cardXY(a).y + cardXY(b).y) / 2 + CARD_H / 2
+            );
+            if (matched.length === 16) {
+              setTimeout(() => {
+                gameOver = true;
+                elapsed = Math.floor((Date.now() - startTime) / 1000);
+                playWin();
+              }, 400);
+            }
+          }, 400);
+        } else {
+          // No match
+          lockInput = true;
+          lockTimer = 70; // frames
+          shake[flipped[0]] = { timer: 20 };
+          shake[flipped[1]] = { timer: 20 };
+        }
+      }
+      return;
+    }
+  }
+}
+
+canvas.onclick = handleInput;
+canvas.ontouchstart = handleInput;
+
+// ---- PARTICLES ----
+function spawnParticles(cx, cy) {
+  const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#C3A6FF', '#FFE66D'];
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 6;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 6 + Math.random() * 8,
+      life: 1.0,
+      shape: Math.random() > 0.5 ? 'circle' : 'star'
+    });
+  }
+}
+
+// ---- DRAW ----
+function drawRoundedRect(x, y, w, h, r, fill, stroke, sw) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = sw || 2; ctx.stroke(); }
+}
+
+const CARD_COLORS = {
+  back: ['#3a0ca3', '#7209b7'],
+  backBorder: '#c77dff',
+  matched: ['#1b4332', '#2d6a4f'],
+  matchedBorder: '#74c69d'
+};
+
+function drawCard(i, offsetX) {
+  const card = cards[i];
+  const pos = cardXY(i);
+  const x = pos.x + offsetX;
+  const y = pos.y;
+
+  // Shake animation
+  let shakeX = 0;
+  if (shake[i] && shake[i].timer > 0) {
+    shakeX = Math.sin(shake[i].timer * 1.2) * 4;
+  }
+
+  const fx = x + shakeX;
+
+  if (card.matched) {
+    // Matched card - groen
+    const grad = ctx.createLinearGradient(fx, y, fx, y + CARD_H);
+    grad.addColorStop(0, CARD_COLORS.matched[0]);
+    grad.addColorStop(1, CARD_COLORS.matched[1]);
+    drawRoundedRect(fx, y, CARD_W, CARD_H, 12, grad, CARD_COLORS.matchedBorder, 3);
+
+    ctx.font = '38px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(card.emoji, fx + CARD_W / 2, y + CARD_H / 2);
+    ctx.textBaseline = 'alphabetic';
+
+  } else if (card.faceUp) {
+    // Face-up card - licht
+    const grad = ctx.createLinearGradient(fx, y, fx, y + CARD_H);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(1, '#e8e8ff');
+    drawRoundedRect(fx, y, CARD_W, CARD_H, 12, grad, '#a0a0ff', 3);
+
+    ctx.font = '38px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(card.emoji, fx + CARD_W / 2, y + CARD_H / 2);
+    ctx.textBaseline = 'alphabetic';
+
+  } else {
+    // Face-down card
+    const grad = ctx.createLinearGradient(fx, y, fx + CARD_W, y + CARD_H);
+    grad.addColorStop(0, CARD_COLORS.back[0]);
+    grad.addColorStop(1, CARD_COLORS.back[1]);
+    drawRoundedRect(fx, y, CARD_W, CARD_H, 12, grad, CARD_COLORS.backBorder, 2);
+
+    // Decoratie achterkant
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = '28px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('❓', fx + CARD_W / 2, y + CARD_H / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, 700);
+  grad.addColorStop(0, '#0f3460');
+  grad.addColorStop(1, '#16213e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 390, 700);
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function drawHeader() {
+  drawRoundedRect(10, 10, 370, 100, 15, 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.15)', 1);
+
+  ctx.fillStyle = '#FFE66D';
+  ctx.font = 'bold 28px "Comic Sans MS", cursive';
+  ctx.textAlign = 'center';
+  ctx.fillText('🧠 Memory', 195, 45);
+
+  const t = gameOver ? elapsed : Math.floor((Date.now() - startTime) / 1000);
+  ctx.fillStyle = '#4ECDC4';
+  ctx.font = 'bold 20px "Comic Sans MS", cursive';
+  ctx.textAlign = 'left';
+  ctx.fillText('⏱ ' + formatTime(t), 25, 85);
+
+  ctx.fillStyle = '#FF8B94';
+  ctx.textAlign = 'right';
+  ctx.fillText('👆 ' + attempts + ' pogingen', 365, 85);
+
+  // Progress bar
+  const pct = matched.length / 16;
+  drawRoundedRect(25, 95, 340, 8, 4, 'rgba(255,255,255,0.1)', null);
+  drawRoundedRect(25, 95, 340 * pct, 8, 4, '#4ECDC4', null);
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    if (p.shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.font = p.size + 'px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✨', p.x, p.y);
+    }
+  });
+  ctx.globalAlpha = 1;
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawGameOver() {
+  drawBackground();
+
+  // Overlay card
+  drawRoundedRect(20, 120, 350, 430, 25, 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.2)', 2);
+
+  ctx.fillStyle = '#FFE66D';
+  ctx.font = 'bold 52px "Comic Sans MS", cursive';
+  ctx.textAlign = 'center';
+  ctx.fillText('🎉 Gewonnen!', 195, 210);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '24px "Comic Sans MS", cursive';
+  ctx.fillText('Tijd:', 195, 280);
+
+  ctx.fillStyle = '#4ECDC4';
+  ctx.font = 'bold 44px "Comic Sans MS", cursive';
+  ctx.fillText(formatTime(elapsed), 195, 340);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '24px "Comic Sans MS", cursive';
+  ctx.fillText('Pogingen:', 195, 390);
+
+  ctx.fillStyle = '#FF8B94';
+  ctx.font = 'bold 44px "Comic Sans MS", cursive';
+  ctx.fillText(attempts, 195, 445);
+
+  const stars = elapsed < 30 ? 3 : elapsed < 60 ? 2 : 1;
+  ctx.font = '48px serif';
+  ctx.fillText('⭐'.repeat(stars) + '☆'.repeat(3 - stars), 195, 510);
+
+  drawRoundedRect(95, 560, 200, 70, 20, '#FF6B6B', '#FF8B94', 3);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 22px "Comic Sans MS", cursive';
+  ctx.fillText('Nog een keer! 🔄', 195, 602);
+
+  drawParticles();
+}
+
+// ---- LOOP ----
+let frame = 0;
+function loop() {
+  requestAnimationFrame(loop);
+  frame++;
+
+  if (gameOver) {
+    drawGameOver();
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.1; p.life -= 0.015;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    return;
+  }
+
+  drawBackground();
+  drawHeader();
+
+  // Draw cards
+  for (let i = 0; i < 16; i++) {
+    drawCard(i, 0);
+  }
+
+  // Update shake
+  for (const k in shake) {
+    if (shake[k].timer > 0) {
+      shake[k].timer--;
+    }
+  }
+
+  // Update lock timer
+  if (lockInput && lockTimer > 0) {
+    lockTimer--;
+    if (lockTimer <= 0) {
+      // Flip back
+      if (flipped.length === 2) {
+        const [a, b] = flipped;
+        cards[a].faceUp = false;
+        cards[b].faceUp = false;
+        playNoMatch();
+      }
+      flipped = [];
+      lockInput = false;
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.1; p.life -= 0.018;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  drawParticles();
+}
+
+initGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
