@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Europa Quiz</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f3460;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const COUNTRIES = [
+  { name: 'Nederland',    flag: '🇳🇱', capital: 'Amsterdam' },
+  { name: 'België',       flag: '🇧🇪', capital: 'Brussel' },
+  { name: 'Duitsland',    flag: '🇩🇪', capital: 'Berlijn' },
+  { name: 'Frankrijk',    flag: '🇫🇷', capital: 'Parijs' },
+  { name: 'Spanje',       flag: '🇪🇸', capital: 'Madrid' },
+  { name: 'Italië',       flag: '🇮🇹', capital: 'Rome' },
+  { name: 'Portugal',     flag: '🇵🇹', capital: 'Lissabon' },
+  { name: 'Zweden',       flag: '🇸🇪', capital: 'Stockholm' },
+  { name: 'Noorwegen',    flag: '🇳🇴', capital: 'Oslo' },
+  { name: 'Denemarken',   flag: '🇩🇰', capital: 'Kopenhagen' },
+  { name: 'Polen',        flag: '🇵🇱', capital: 'Warschau' },
+  { name: 'Griekenland',  flag: '🇬🇷', capital: 'Athene' },
+  { name: 'Zwitserland',  flag: '🇨🇭', capital: 'Bern' },
+  { name: 'Oostenrijk',   flag: '🇦🇹', capital: 'Wenen' },
+  { name: 'Finland',      flag: '🇫🇮', capital: 'Helsinki' },
+];
+
+let state = 'start';
+let round = 0;
+let score = 0;
+let totalRounds = 10;
+let currentQ = null;
+let feedback = null;
+let particles = [];
+let buttons = [];
+let startBtn = null;
+let restartBtn = null;
+let questionPool = [];
+
+// ---- Helpers ----
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ---- Question Types ----
+// type 0: Wat is de hoofdstad van X? answers = city names
+// type 1: Bij welk land hoort deze vlag? answers = country names
+function generateQuestion() {
+  const type = round % 2; // alternate
+  const correct = COUNTRIES[randInt(0, COUNTRIES.length - 1)];
+  const wrongs = [];
+  let attempts = 0;
+  while (wrongs.length < 2 && attempts < 60) {
+    attempts++;
+    const w = COUNTRIES[randInt(0, COUNTRIES.length - 1)];
+    if (w.name !== correct.name && !wrongs.some(x => x.name === w.name)) {
+      wrongs.push(w);
+    }
+  }
+
+  let question, answers, correctIdx;
+  if (type === 0) {
+    question = 'Wat is de hoofdstad van\n' + correct.name + '?';
+    const opts = shuffle([correct.capital, wrongs[0].capital, wrongs[1].capital]);
+    correctIdx = opts.indexOf(correct.capital);
+    answers = opts;
+    return { type, question, answers, correctIdx, correct };
+  } else {
+    question = 'Bij welk land hoort\ndeze vlag?';
+    const opts = shuffle([correct.name, wrongs[0].name, wrongs[1].name]);
+    correctIdx = opts.indexOf(correct.name);
+    answers = opts;
+    return { type, question, answers, correctIdx, correct };
+  }
+}
+
+// ---- Particles ----
+function spawnParticles(x, y, good) {
+  const cols = good
+    ? ['#FFD93D','#6BCB77','#4D96FF','#FF922B','#CC5DE8']
+    : ['#FF6B6B','#888','#555'];
+  for (let i = 0; i < 28; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 6;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: 4 + Math.random() * 7,
+      color: cols[randInt(0, cols.length - 1)],
+      life: 1.0,
+      decay: 0.025 + Math.random() * 0.03,
+      shape: randInt(0, 1) // 0=circle, 1=rect
+    });
+  }
+}
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.18;
+    p.life -= p.decay;
+  });
+}
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    if (p.shape === 0) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(p.x - p.r/2, p.y - p.r/2, p.r, p.r);
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ---- Draw Helpers ----
+function drawRoundedRect(x, y, w, h, r, fill, stroke, lineW) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineW || 3; ctx.stroke(); }
+}
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 390, 700);
+  g.addColorStop(0, '#0f3460');
+  g.addColorStop(1, '#16213e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 390, 700);
+  // subtle globe decoration
+  ctx.globalAlpha = 0.06;
+  ctx.strokeStyle = '#4D96FF';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.arc(195, 350, 60 + i * 55, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function wrapText(text, maxW, font) {
+  ctx.font = font;
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(function(w) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawMultiline(text, cx, startY, font, color, lineH) {
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const parts = text.split('\n');
+  parts.forEach(function(p, i) {
+    ctx.fillText(p, cx, startY + i * lineH);
+  });
+}
+
+// ---- Screens ----
+function drawStartScreen() {
+  drawBackground();
+
+  ctx.fillStyle = '#FFD93D';
+  ctx.font = 'bold 42px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(255,217,61,0.5)';
+  ctx.shadowBlur = 20;
+  ctx.fillText('🌍 Europa Quiz', 195, 110);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#cce4ff';
+  ctx.font = '20px Arial';
+  ctx.fillText('Landen en hoofdsteden', 195, 160);
+
+  // Show some flag examples
+  const examples = COUNTRIES.slice(0, 5);
+  ctx.font = '50px Arial';
+  examples.forEach(function(c, i) {
+    ctx.fillText(c.flag, 50 + i * 73, 270);
+  });
+
+  ctx.font = '50px Arial';
+  COUNTRIES.slice(5, 10).forEach(function(c, i) {
+    ctx.fillText(c.flag, 50 + i * 73, 355);
+  });
+
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.font = '18px Arial';
+  ctx.fillText('10 vragen • Vlaggen & Hoofdsteden', 195, 420);
+
+  // Start
+  drawRoundedRect(95, 480, 200, 68, 18, '#6BCB77');
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 26px Arial';
+  ctx.fillText('SPELEN!', 195, 514);
+
+  startBtn = { x: 95, y: 480, w: 200, h: 68 };
+}
+
+function drawPlayScreen() {
+  drawBackground();
+  const q = currentQ;
+
+  // Header
+  ctx.fillStyle = '#FFD93D';
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Vraag ' + round + ' / ' + totalRounds, 195, 38);
+
+  ctx.fillStyle = '#6BCB77';
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText('Score: ' + score, 195, 65);
+
+  // Progress
+  drawRoundedRect(25, 80, 340, 10, 5, '#1a3a5c');
+  if (round > 0) drawRoundedRect(25, 80, 340 * (round / totalRounds), 10, 5, '#6BCB77');
+
+  // Question box
+  drawRoundedRect(20, 110, 350, 100, 14, 'rgba(255,255,255,0.08)');
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = q.question.split('\n');
+  lines.forEach(function(line, i) {
+    ctx.fillText(line, 195, 140 + i * 34);
+  });
+
+  // Big content area
+  if (q.type === 0) {
+    // Show flag big
+    ctx.font = '130px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(q.correct.flag, 195, 340);
+  } else {
+    // Show flag big
+    ctx.font = '130px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(q.correct.flag, 195, 340);
+  }
+
+  // Answer buttons
+  buttons = [];
+  const btnY = [460, 550, 640];
+  const btnFills = ['#4D96FF', '#FF922B', '#CC5DE8'];
+
+  q.answers.forEach(function(ans, i) {
+    let fill = btnFills[i % 3];
+    let textCol = '#fff';
+    let border = null;
+
+    if (feedback !== null) {
+      if (i === q.correctIdx) {
+        fill = '#6BCB77';
+        border = '#fff';
+      } else if (i === feedback.chosen && !feedback.correct) {
+        fill = '#FF6B6B';
+        border = '#fff';
+      } else {
+        fill = '#1a2a3a';
+        textCol = '#555';
+      }
+    }
+
+    drawRoundedRect(30, btnY[i] - 34, 330, 66, 16, fill, border, 3);
+    ctx.fillStyle = textCol;
+    ctx.font = 'bold 21px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ans, 195, btnY[i]);
+
+    buttons.push({ x: 30, y: btnY[i] - 34, w: 330, h: 66, idx: i });
+  });
+
+  drawParticles();
+}
+
+function drawEndScreen() {
+  drawBackground();
+
+  ctx.fillStyle = '#FFD93D';
+  ctx.font = 'bold 46px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(255,217,61,0.5)';
+  ctx.shadowBlur = 20;
+  ctx.fillText('Klaar! 🎉', 195, 130);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#cce4ff';
+  ctx.font = '24px Arial';
+  ctx.fillText('Jouw score:', 195, 205);
+
+  ctx.fillStyle = '#6BCB77';
+  ctx.font = 'bold 82px Arial';
+  ctx.fillText(score + '/' + totalRounds, 195, 320);
+
+  const msg = score <= 4 ? 'Blijf oefenen! 💪'
+            : score <= 7 ? 'Goed bezig! 👏'
+            : 'Aardrijkskundekampioen! 🌍';
+  ctx.fillStyle = '#FFD93D';
+  ctx.font = 'bold 24px Arial';
+  ctx.fillText(msg, 195, 390);
+
+  const starCount = Math.ceil((score / totalRounds) * 3);
+  for (let i = 0; i < 3; i++) drawStar(130 + i * 65, 460, 22, i < starCount ? '#FFD700' : '#2a3a4a');
+
+  drawRoundedRect(95, 530, 200, 65, 18, '#4D96FF');
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px Arial';
+  ctx.fillText('Opnieuw!', 195, 563);
+
+  restartBtn = { x: 95, y: 530, w: 200, h: 65 };
+  drawParticles();
+}
+
+function drawStar(cx, cy, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI / 5) * i - Math.PI / 2;
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    i === 0 ? ctx.moveTo(cx + Math.cos(a)*rad, cy + Math.sin(a)*rad)
+            : ctx.lineTo(cx + Math.cos(a)*rad, cy + Math.sin(a)*rad);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ---- Logic ----
+function startGame() {
+  round = 0; score = 0; particles = [];
+  nextRound();
+}
+function nextRound() {
+  if (round >= totalRounds) { state = 'end'; spawnParticles(195, 350, true); return; }
+  round++;
+  feedback = null;
+  currentQ = generateQuestion();
+  state = 'playing';
+}
+function answerChosen(idx) {
+  if (feedback !== null) return;
+  const correct = idx === currentQ.correctIdx;
+  feedback = { correct, chosen: idx };
+  if (correct) { score++; spawnParticles(195, 340, true); }
+  else { spawnParticles(195, 340, false); }
+  setTimeout(function() { nextRound(); }, 1100);
+}
+
+// ---- Loop ----
+function loop() {
+  requestAnimationFrame(loop);
+  updateParticles();
+  if (state === 'start') drawStartScreen();
+  else if (state === 'playing') drawPlayScreen();
+  else if (state === 'end') drawEndScreen();
+}
+
+// ---- Input ----
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  if (e.touches && e.touches.length > 0) {
+    return { x: (e.touches[0].clientX - rect.left) * sx, y: (e.touches[0].clientY - rect.top) * sy };
+  }
+  return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+}
+function handleTap(e) {
+  e.preventDefault();
+  const { x, y } = getPos(e);
+  if (state === 'start' && startBtn) {
+    if (x >= startBtn.x && x <= startBtn.x + startBtn.w && y >= startBtn.y && y <= startBtn.y + startBtn.h) startGame();
+  } else if (state === 'playing') {
+    buttons.forEach(function(btn) {
+      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) answerChosen(btn.idx);
+    });
+  } else if (state === 'end' && restartBtn) {
+    if (x >= restartBtn.x && x <= restartBtn.x + restartBtn.w && y >= restartBtn.y && y <= restartBtn.y + restartBtn.h) state = 'start';
+  }
+}
+canvas.onclick = function(e) { handleTap(e); };
+canvas.ontouchstart = function(e) { handleTap(e); };
+
+loop();
+</script>
+</body>
+</html>
