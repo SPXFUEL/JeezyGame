@@ -6,214 +6,184 @@
 <title>Klokkijken</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #1a1a2e;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    height: 100vh;
-    overflow: hidden;
-    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
-  }
-  canvas { display: block; }
+  body { background: #0d0d2b; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Arial Rounded MT Bold', Arial, sans-serif; }
+  canvas { display: block; cursor: pointer; touch-action: none; }
 </style>
 </head>
 <body>
-<canvas id="game" width="390" height="700"></canvas>
+<canvas id="c"></canvas>
 <script>
-const canvas = document.getElementById('game');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+canvas.width = 390;
+canvas.height = 700;
 
-// ── State ──────────────────────────────────────────────────
-const STATE = {
-  screen: 'start',   // start | play | result | win
-  level: 0,          // 0 = hele uren, 1 = halve uren
-  score: 0,
-  total: 0,
-  round: 0,
-  maxRounds: 10,
-  targetHour: 3,
-  targetMinute: 0,
-  options: [],
-  chosen: null,       // null | 'correct' | 'wrong'
-  animAngle: null,    // animatie voor wijzer
-  animStart: null,
-  animDuration: 700,
-  displayHour: 3,
-  displayMinute: 0,
-  stars: 0,
-  buttons: []
-};
+function resize() {
+  const ratio = Math.min(window.innerWidth / 390, window.innerHeight / 700);
+  canvas.style.width = (390 * ratio) + 'px';
+  canvas.style.height = (700 * ratio) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
 
-// ── Helpers ────────────────────────────────────────────────
-function pad(n) { return n < 10 ? '0' + n : '' + n; }
-function timeStr(h, m) { return h + ':' + pad(m); }
-
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+// Audio
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
 }
 
-function pickRound() {
-  STATE.buttons = [];
-  STATE.chosen = null;
+function playTick() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.value = 1100;
+    g.gain.setValueAtTime(0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.02);
+    o.start(ac.currentTime);
+    o.stop(ac.currentTime + 0.03);
+  } catch(e) {}
+}
 
-  const useHalf = STATE.level === 1;
-  const h = randomInt(1, 12);
-  const m = useHalf ? 30 : 0;
-  STATE.targetHour = h;
-  STATE.targetMinute = m;
+function playChime() {
+  try {
+    const ac = getAC();
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = f;
+      o.type = 'sine';
+      const t = ac.currentTime + i * 0.13;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.3, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      o.start(t);
+      o.stop(t + 0.5);
+    });
+  } catch(e) {}
+}
 
-  // Genereer 3 unieke opties
-  const correct = timeStr(h, m);
-  const opts = [correct];
+function playBuzz() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'square';
+    o.frequency.value = 140;
+    g.gain.setValueAtTime(0.25, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
+    o.start(ac.currentTime);
+    o.stop(ac.currentTime + 0.35);
+  } catch(e) {}
+}
 
-  while (opts.length < 3) {
-    const rh = randomInt(1, 12);
-    const rm = useHalf ? (Math.random() < 0.5 ? 0 : 30) : 30;
-    const t = timeStr(rh, rm);
-    if (!opts.includes(t)) opts.push(t);
+function playWin() {
+  try {
+    const ac = getAC();
+    [523, 659, 784, 659, 784, 1047].forEach((f, i) => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = f;
+      o.type = 'sine';
+      const t = ac.currentTime + i * 0.16;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.35, t + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      o.start(t);
+      o.stop(t + 0.6);
+    });
+  } catch(e) {}
+}
+
+// State
+const S = { START: 0, GAME: 1, END: 2 };
+let screen = S.START;
+let round = 0;
+let score = 0;
+const ROUNDS = 10;
+let feedback = null;
+let feedbackTimer = 0;
+let answered = false;
+
+// Clock animation
+let anim = { active: false, progress: 0, fromH: -Math.PI/2, fromM: -Math.PI/2, toH: -Math.PI/2, toM: -Math.PI/2 };
+let curH = -Math.PI / 2;
+let curM = -Math.PI / 2;
+let lastTickTs = 0;
+let targetTime = [12, 0];
+let options = [];
+let correctIdx = 0;
+
+// Confetti
+let confetti = [];
+
+const easyTimes = [
+  [1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0],[11,0],[12,0],
+  [1,30],[2,30],[3,30],[4,30],[5,30],[6,30],[7,30],[8,30],[9,30],[10,30],[11,30],[12,30]
+];
+const medTimes = [
+  [1,15],[2,45],[3,15],[4,45],[5,15],[6,45],[7,15],[8,45],[9,15],[10,45],[11,15],[12,45],
+  [1,45],[2,15],[3,45],[4,15],[5,45],[6,15]
+];
+
+function fmt(h, m) { return h + ':' + (m < 10 ? '0' + m : m); }
+
+function timeEq(a, b) { return a[0] === b[0] && a[1] === b[1]; }
+
+function genOptions(target) {
+  const pool = [...easyTimes, ...medTimes];
+  const opts = [target];
+  let attempts = 0;
+  while (opts.length < 4 && attempts < 200) {
+    attempts++;
+    const c = pool[Math.floor(Math.random() * pool.length)];
+    if (!opts.some(o => timeEq(o, c))) opts.push(c);
   }
-
-  // Shuffle
   for (let i = opts.length - 1; i > 0; i--) {
-    const j = randomInt(0, i);
+    const j = Math.floor(Math.random() * (i + 1));
     [opts[i], opts[j]] = [opts[j], opts[i]];
   }
-
-  STATE.options = opts;
-
-  // Animatie: wijzer begint van 12 en draait naar doel
-  STATE.animStart = null;
-  STATE.displayHour = STATE.targetHour;
-  STATE.displayMinute = STATE.targetMinute;
-  STATE.animating = true;
-  STATE.animStartHour = 12;
-  STATE.animStartMinute = 0;
+  correctIdx = opts.findIndex(o => timeEq(o, target));
+  return opts;
 }
 
-// ── Tekenfuncties ──────────────────────────────────────────
-function drawBackground() {
-  // Hemelachtergrond
-  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  grad.addColorStop(0, '#0f3460');
-  grad.addColorStop(1, '#16213e');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Sterren
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  const starPositions = [
-    [40,30],[90,60],[150,20],[200,50],[270,35],[330,55],[370,25],
-    [60,110],[310,90],[355,130],[20,150],[180,100]
-  ];
-  starPositions.forEach(([x,y]) => {
-    ctx.beginPath();
-    ctx.arc(x, y, 1.5, 0, Math.PI*2);
-    ctx.fill();
-  });
+function toAngles(h, m) {
+  const mA = (m / 60) * Math.PI * 2 - Math.PI / 2;
+  const hA = ((h % 12) / 12 + m / 720) * Math.PI * 2 - Math.PI / 2;
+  return { hA, mA };
 }
 
-function drawClock(cx, cy, r, hourVal, minuteVal, progress) {
-  // progress: 0..1 voor animatie
-
-  // Schaduw klok
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 20;
-
-  // Klok achtergrond
-  const grad = ctx.createRadialGradient(cx - r*0.2, cy - r*0.2, r*0.1, cx, cy, r);
-  grad.addColorStop(0, '#fffde7');
-  grad.addColorStop(1, '#fff9c4');
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // Rand
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.strokeStyle = '#f57f17';
-  ctx.lineWidth = 8;
-  ctx.stroke();
-  ctx.restore();
-
-  // Uur-streepjes
-  for (let i = 0; i < 12; i++) {
-    const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
-    const isMajor = i % 3 === 0;
-    const len = isMajor ? r * 0.15 : r * 0.08;
-    const x1 = cx + Math.cos(ang) * (r - 10);
-    const y1 = cy + Math.sin(ang) * (r - 10);
-    const x2 = cx + Math.cos(ang) * (r - 10 - len);
-    const y2 = cy + Math.sin(ang) * (r - 10 - len);
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.strokeStyle = isMajor ? '#bf360c' : '#e65100';
-    ctx.lineWidth = isMajor ? 4 : 2;
-    ctx.stroke();
-  }
-
-  // Cijfers
-  ctx.fillStyle = '#bf360c';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `bold ${Math.round(r * 0.22)}px Arial`;
-  for (let i = 1; i <= 12; i++) {
-    const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
-    const tx = cx + Math.cos(ang) * r * 0.72;
-    const ty = cy + Math.sin(ang) * r * 0.72;
-    ctx.fillText(i, tx, ty);
-  }
-
-  // Bereken geïnterpoleerde hoek voor animatie
-  let h = hourVal;
-  let m = minuteVal;
-
-  if (progress < 1 && STATE.animating) {
-    const startH = STATE.animStartHour;
-    const startM = STATE.animStartMinute;
-    h = startH + (hourVal - startH) * progress;
-    m = startM + (minuteVal - startM) * progress;
-  }
-
-  // Minutenwijzer
-  const minAng = (m / 60) * Math.PI * 2 - Math.PI / 2;
-  drawHand(cx, cy, minAng, r * 0.72, 5, '#1565c0');
-
-  // Uurwijzer
-  const hourFrac = (h % 12) + m / 60;
-  const hourAng = (hourFrac / 12) * Math.PI * 2 - Math.PI / 2;
-  drawHand(cx, cy, hourAng, r * 0.50, 7, '#b71c1c');
-
-  // Middelpunt
-  ctx.beginPath();
-  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
-  ctx.fillStyle = '#37474f';
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#cfd8dc';
-  ctx.fill();
+function startRound() {
+  answered = false;
+  feedback = null;
+  const useHard = round >= 5;
+  const pool = useHard ? [...easyTimes, ...medTimes] : easyTimes;
+  targetTime = pool[Math.floor(Math.random() * pool.length)];
+  options = genOptions(targetTime);
+  const a = toAngles(targetTime[0], targetTime[1]);
+  anim.active = true;
+  anim.progress = 0;
+  anim.fromH = curH;
+  anim.fromM = curM;
+  anim.toH = a.hA;
+  anim.toM = a.mA;
 }
 
-function drawHand(cx, cy, angle, length, width, color) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + Math.cos(angle) * length, cy + Math.sin(angle) * length);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = 'round';
-  ctx.shadowColor = 'rgba(0,0,0,0.3)';
-  ctx.shadowBlur = 4;
-  ctx.stroke();
-  ctx.restore();
+function eio(t) { return t < 0.5 ? 2*t*t : -1 + (4-2*t)*t; }
+
+function lerpAngle(a, b, t) {
+  let diff = b - a;
+  while (diff < 0) diff += Math.PI * 2;
+  while (diff > Math.PI * 2) diff -= Math.PI * 2;
+  return a + diff * t;
 }
 
-function drawRoundedRect(x, y, w, h, r, fill, stroke, lw) {
+function drawRoundedRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -225,259 +195,519 @@ function drawRoundedRect(x, y, w, h, r, fill, stroke, lw) {
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
 }
 
-// ── Schermen ───────────────────────────────────────────────
+function drawClock(cx, cy) {
+  const R = 130;
+
+  // Drop shadow base
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,30,0.7)';
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 10;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R + 14, 0, Math.PI * 2);
+  // Outer decorative ring
+  const outerGrad = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
+  outerGrad.addColorStop(0, '#3a4a8a');
+  outerGrad.addColorStop(0.5, '#1e2d6e');
+  outerGrad.addColorStop(1, '#0f1a4a');
+  ctx.fillStyle = outerGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // Outer border ring stroke
+  ctx.beginPath();
+  ctx.arc(cx, cy, R + 7, 0, Math.PI * 2);
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#1a2a6e';
+  ctx.stroke();
+
+  // Clock face
+  const faceGrad = ctx.createRadialGradient(cx - 20, cy - 20, 10, cx, cy, R);
+  faceGrad.addColorStop(0, '#fffef5');
+  faceGrad.addColorStop(0.7, '#f5f2e0');
+  faceGrad.addColorStop(1, '#e8e4cc');
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = faceGrad;
+  ctx.fill();
+
+  // Face inner border
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(26,42,110,0.25)';
+  ctx.stroke();
+
+  // Minute ticks (60)
+  for (let i = 0; i < 60; i++) {
+    if (i % 5 === 0) continue;
+    const angle = (i / 60) * Math.PI * 2 - Math.PI / 2;
+    const x1 = cx + Math.cos(angle) * (R - 5);
+    const y1 = cy + Math.sin(angle) * (R - 5);
+    const x2 = cx + Math.cos(angle) * (R - 13);
+    const y2 = cy + Math.sin(angle) * (R - 13);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#b0b4cc';
+    ctx.stroke();
+  }
+
+  // Hour markers
+  for (let i = 1; i <= 12; i++) {
+    const angle = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const isMajor = (i % 3 === 0);
+
+    if (isMajor) {
+      // Thick rectangular tick
+      ctx.save();
+      ctx.translate(cx + cos * (R - 15), cy + sin * (R - 15));
+      ctx.rotate(angle + Math.PI / 2);
+      ctx.fillStyle = '#1a2a6e';
+      ctx.fillRect(-4.5, -11, 9, 22);
+      ctx.restore();
+
+      // Number
+      ctx.fillStyle = '#1a2a6e';
+      ctx.font = 'bold 24px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(i), cx + cos * (R - 40), cy + sin * (R - 40));
+    } else {
+      // Thin tick
+      const x1 = cx + cos * (R - 7);
+      const y1 = cy + sin * (R - 7);
+      const x2 = cx + cos * (R - 20);
+      const y2 = cy + sin * (R - 20);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#7080aa';
+      ctx.stroke();
+
+      // Small numbers
+      ctx.fillStyle = '#5060a0';
+      ctx.font = '15px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(i), cx + cos * (R - 32), cy + sin * (R - 32));
+    }
+  }
+
+  // Second hand (decorative, fixed at ~20s)
+  const sA = (20 / 60) * Math.PI * 2 - Math.PI / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(sA);
+  ctx.beginPath();
+  ctx.moveTo(0, 18);
+  ctx.lineTo(0, -102);
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#d42020';
+  ctx.shadowColor = 'rgba(200,0,0,0.4)';
+  ctx.shadowBlur = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#d42020';
+  ctx.fill();
+  ctx.restore();
+
+  // Minute hand
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(curM);
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.moveTo(-3, 10);
+  ctx.lineTo(0, -95);
+  ctx.lineTo(3, 10);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#1a2a6e';
+  ctx.stroke();
+  ctx.fillStyle = '#1a2a6e';
+  ctx.fill();
+  ctx.restore();
+
+  // Hour hand
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(curH);
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.moveTo(-5, 10);
+  ctx.lineTo(0, -65);
+  ctx.lineTo(5, 10);
+  ctx.fillStyle = '#1a2a6e';
+  ctx.fill();
+  ctx.restore();
+
+  // Center cap
+  ctx.beginPath();
+  ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a2a6e';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#d42020';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a2a6e';
+  ctx.fill();
+}
+
+function drawBtn(x, y, w, h, label, bg, tc) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 4;
+  drawRoundedRect(x, y, w, h, 18);
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = tc;
+  ctx.font = 'bold 28px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+}
+
+function drawBackground() {
+  const bg = ctx.createLinearGradient(0, 0, 0, 700);
+  bg.addColorStop(0, '#1a1a4e');
+  bg.addColorStop(1, '#0d0d2b');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 390, 700);
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  for (let i = 0; i < 35; i++) {
+    const sx = ((i * 137.508) % 390);
+    const sy = ((i * 91.7) % 700);
+    const sr = 0.8 + (i % 3) * 0.6;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawStart() {
   drawBackground();
 
-  // Titel banner
-  drawRoundedRect(30, 60, 330, 90, 20, '#f57f17', '#e65100', 4);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 38px Arial';
+  // Title card
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 20;
+  drawRoundedRect(30, 50, 330, 80, 20);
+  const tg = ctx.createLinearGradient(30, 50, 30, 130);
+  tg.addColorStop(0, '#2a3a9e');
+  tg.addColorStop(1, '#1a2a7e');
+  ctx.fillStyle = tg;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 48px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('🕐 Klokkijken', 195, 115);
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Klokkijken', 195, 90);
 
-  // Klok preview
-  drawClock(195, 310, 110, 3, 0, 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = '20px Arial';
+  ctx.fillText('Hoe laat is het?', 195, 155);
 
-  // Instructie
+  drawClock(195, 340);
+
+  // Start button
+  const bg = ctx.createLinearGradient(70, 560, 70, 624);
+  bg.addColorStop(0, '#2ecc71');
+  bg.addColorStop(1, '#1a9950');
+  ctx.save();
+  ctx.shadowColor = 'rgba(46,204,113,0.5)';
+  ctx.shadowBlur = 18;
+  drawRoundedRect(70, 560, 250, 64, 32);
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.restore();
   ctx.fillStyle = '#fff';
-  ctx.font = '22px Arial';
+  ctx.font = 'bold 30px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('Hoe laat is het?', 195, 450);
-  ctx.font = '18px Arial';
-  ctx.fillStyle = '#aee4ff';
-  ctx.fillText('Kies het goede antwoord!', 195, 480);
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Speel nu!', 195, 592);
 
-  // Start knop
-  drawRoundedRect(95, 530, 200, 80, 20, '#4caf50', '#388e3c', 4);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 28px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('SPELEN!', 195, 577);
-
-  STATE.buttons = [{ x: 95, y: 530, w: 200, h: 80, action: 'start' }];
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '17px Arial';
+  ctx.fillText('10 vragen  -  Leeftijd 5-6 jaar', 195, 653);
 }
 
-function drawPlay(ts) {
+function drawGame() {
   drawBackground();
 
-  // Animatie voortgang
-  let progress = 1;
-  if (STATE.animating) {
-    if (!STATE.animStart) STATE.animStart = ts;
-    progress = Math.min(1, (ts - STATE.animStart) / STATE.animDuration);
-    if (progress >= 1) STATE.animating = false;
-  }
-
-  // Score balk
-  drawRoundedRect(10, 10, 370, 50, 12, 'rgba(255,255,255,0.15)', null);
-  ctx.fillStyle = '#fff';
+  // Header
+  ctx.fillStyle = '#ffd700';
   ctx.font = 'bold 20px Arial';
   ctx.textAlign = 'left';
-  ctx.fillText('⭐ ' + STATE.score, 30, 42);
+  ctx.textBaseline = 'top';
+  ctx.fillText('Vraag ' + (round + 1) + ' van ' + ROUNDS, 18, 16);
+
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'right';
-  ctx.fillText('Ronde ' + (STATE.round + 1) + '/' + STATE.maxRounds, 370, 42);
+  ctx.fillText('Score: ' + score, 372, 16);
 
-  // Level badge
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffe082';
-  ctx.font = '16px Arial';
-  ctx.fillText(STATE.level === 0 ? 'Hele uren' : 'Halve uren', 195, 42);
+  // Progress bar
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  drawRoundedRect(18, 46, 354, 10, 5);
+  ctx.fill();
+  ctx.fillStyle = '#ffd700';
+  const pw = (round / ROUNDS) * 354;
+  if (pw > 0) { drawRoundedRect(18, 46, pw, 10, 5); ctx.fill(); }
 
-  // Klok
-  drawClock(195, 240, 115, STATE.displayHour, STATE.displayMinute, progress);
-
-  // Vraag
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 24px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('Hoe laat is het?', 195, 390);
-
-  // Antwoord knoppen
-  STATE.buttons = [];
-  const btnW = 100, btnH = 80;
-  const startX = (390 - 3 * btnW - 2 * 15) / 2;
-  const btnY = 415;
-
-  STATE.options.forEach(function(opt, i) {
-    const bx = startX + i * (btnW + 15);
-    let bg = '#1565c0';
-    let border = '#0d47a1';
-    let textColor = '#fff';
-
-    if (STATE.chosen !== null) {
-      const correctTime = timeStr(STATE.targetHour, STATE.targetMinute);
-      if (opt === correctTime) {
-        bg = '#2e7d32'; border = '#1b5e20';
-      } else if (opt === STATE.chosen) {
-        bg = '#c62828'; border = '#b71c1c';
-      } else {
-        bg = 'rgba(21,101,192,0.4)'; border = 'rgba(13,71,161,0.4)';
-      }
-    }
-
-    drawRoundedRect(bx, btnY, btnW, btnH, 16, bg, border, 3);
-    ctx.fillStyle = textColor;
-    ctx.font = 'bold 26px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(opt, bx + btnW / 2, btnY + btnH / 2 + 8);
-
-    if (STATE.chosen === null) {
-      STATE.buttons.push({ x: bx, y: btnY, w: btnW, h: btnH, action: 'answer', value: opt });
-    }
-  });
-
-  // Feedback emoji
-  if (STATE.chosen !== null) {
-    const correctTime = timeStr(STATE.targetHour, STATE.targetMinute);
-    const isRight = STATE.chosen === correctTime;
-    ctx.font = '60px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(isRight ? '😄' : '😅', 195, 545);
-    ctx.fillStyle = isRight ? '#a5d6a7' : '#ef9a9a';
-    ctx.font = 'bold 22px Arial';
-    ctx.fillText(isRight ? 'Super goed!' : 'Het was ' + correctTime, 195, 600);
-
-    // Volgende knop
-    drawRoundedRect(120, 625, 150, 60, 15, '#ff9800', '#e65100', 3);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 22px Arial';
-    ctx.fillText('Verder ➜', 195, 661);
-    STATE.buttons.push({ x: 120, y: 625, w: 150, h: 60, action: 'next' });
-  }
-}
-
-function drawResult() {
-  drawBackground();
-
-  const pct = Math.round((STATE.score / STATE.maxRounds) * 100);
-  let stars = pct >= 90 ? 3 : pct >= 60 ? 2 : 1;
-  STATE.stars = stars;
-
-  drawRoundedRect(20, 80, 350, 120, 20, 'rgba(255,255,255,0.15)', null);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 36px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('Klaar! 🎉', 195, 140);
-  ctx.font = 'bold 28px Arial';
-  ctx.fillStyle = '#ffe082';
-  ctx.fillText(STATE.score + ' / ' + STATE.maxRounds + ' goed', 195, 185);
-
-  // Sterren
-  ctx.font = '60px Arial';
-  const starRow = ['⭐','⭐','⭐'];
-  for (let i = 0; i < 3; i++) {
-    ctx.globalAlpha = i < stars ? 1 : 0.25;
-    ctx.fillText('⭐', 100 + i * 100, 300);
-  }
-  ctx.globalAlpha = 1;
-
-  // Klok als decoratie
-  drawClock(195, 470, 80, 12, 0, 1);
-
-  STATE.buttons = [];
-  // Opnieuw
-  drawRoundedRect(20, 570, 160, 80, 16, '#1565c0', '#0d47a1', 3);
-  ctx.fillStyle = '#fff';
+  // Instruction
+  ctx.fillStyle = '#c8d0ff';
   ctx.font = 'bold 20px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('Opnieuw', 100, 617);
-  STATE.buttons.push({ x: 20, y: 570, w: 160, h: 80, action: 'restart' });
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Hoe laat is het?', 195, 74);
 
-  // Volgend level
-  if (STATE.level === 0 && pct >= 60) {
-    drawRoundedRect(210, 570, 160, 80, 16, '#4caf50', '#388e3c', 3);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 18px Arial';
-    ctx.fillText('Halve uren →', 290, 617);
-    STATE.buttons.push({ x: 210, y: 570, w: 160, h: 80, action: 'nextlevel' });
+  // Clock
+  drawClock(195, 260);
+
+  // Feedback
+  if (feedback) {
+    ctx.save();
+    ctx.shadowColor = feedback.color;
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = feedback.color;
+    ctx.font = 'bold 30px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(feedback.text, 195, 418);
+    ctx.restore();
+  }
+
+  // Buttons 2x2
+  const bW = 158, bH = 62, gX = 16, gY = 12;
+  const sX = (390 - bW * 2 - gX) / 2;
+  const sY = 438;
+
+  options.forEach((opt, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const bx = sX + col * (bW + gX);
+    const by = sY + row * (bH + gY);
+
+    let bgColor = '#2a3a8e';
+    if (answered) {
+      bgColor = i === correctIdx ? '#1a7a3a' : '#7a2020';
+    }
+    drawBtn(bx, by, bW, bH, fmt(opt[0], opt[1]), bgColor, '#ffffff');
+  });
+}
+
+function drawEnd() {
+  drawBackground();
+
+  // Confetti
+  confetti.forEach(p => {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
+    ctx.restore();
+  });
+
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 46px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Goed gedaan!', 195, 155);
+
+  // Score circle
+  const cg = ctx.createRadialGradient(185, 315, 8, 195, 330, 92);
+  cg.addColorStop(0, '#ffe04a');
+  cg.addColorStop(1, '#e08010');
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,200,0,0.5)';
+  ctx.shadowBlur = 30;
+  ctx.beginPath();
+  ctx.arc(195, 330, 92, 0, Math.PI * 2);
+  ctx.fillStyle = cg;
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#1a2a6e';
+  ctx.font = 'bold 58px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(score + '/' + ROUNDS, 195, 330);
+
+  const msgs = ['Oefenen maar!', 'Goed bezig!', 'Super goed!', 'Uitstekend!'];
+  const mi = score >= 9 ? 3 : score >= 7 ? 2 : score >= 5 ? 1 : 0;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(msgs[mi], 195, 450);
+
+  // Restart
+  const rg = ctx.createLinearGradient(70, 530, 70, 594);
+  rg.addColorStop(0, '#2ecc71');
+  rg.addColorStop(1, '#1a9950');
+  ctx.save();
+  ctx.shadowColor = 'rgba(46,204,113,0.5)';
+  ctx.shadowBlur = 18;
+  drawRoundedRect(70, 530, 250, 64, 32);
+  ctx.fillStyle = rg;
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 30px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Opnieuw!', 195, 562);
+}
+
+function spawnConfetti() {
+  confetti = [];
+  const colors = ['#ffd700','#e74c3c','#3498db','#2ecc71','#9b59b6','#ff6b6b','#00d2d3'];
+  for (let i = 0; i < 65; i++) {
+    confetti.push({
+      x: Math.random() * 390,
+      y: -20 - Math.random() * 300,
+      vx: (Math.random() - 0.5) * 2.5,
+      vy: 1.8 + Math.random() * 3,
+      rot: Math.random() * Math.PI * 2,
+      vrot: (Math.random() - 0.5) * 0.18,
+      color: colors[i % colors.length],
+      size: 7 + Math.random() * 9
+    });
   }
 }
 
-// ── Game loop ──────────────────────────────────────────────
+function update(ts) {
+  if (anim.active) {
+    anim.progress = Math.min(anim.progress + 0.022, 1);
+    const t = eio(anim.progress);
+    if (ts - lastTickTs > 55 && anim.progress < 0.98) {
+      playTick();
+      lastTickTs = ts;
+    }
+    curH = lerpAngle(anim.fromH, anim.toH, t);
+    curM = lerpAngle(anim.fromM, anim.toM, t);
+    if (anim.progress >= 1) {
+      anim.active = false;
+      curH = anim.toH;
+      curM = anim.toM;
+    }
+  }
+  if (screen === S.END) {
+    confetti.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.rot += p.vrot;
+      if (p.y > 720) p.y = -20;
+    });
+  }
+}
+
+function render() {
+  ctx.clearRect(0, 0, 390, 700);
+  if (screen === S.START) drawStart();
+  else if (screen === S.GAME) drawGame();
+  else drawEnd();
+}
+
 function loop(ts) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (STATE.screen === 'start') drawStart();
-  else if (STATE.screen === 'play') drawPlay(ts);
-  else if (STATE.screen === 'result') drawResult();
-
+  update(ts);
+  render();
   requestAnimationFrame(loop);
 }
 
-// ── Input ──────────────────────────────────────────────────
-function handleTap(x, y) {
-  for (let i = 0; i < STATE.buttons.length; i++) {
-    const b = STATE.buttons[i];
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-      handleAction(b.action, b.value);
-      return;
+function getPos(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = 390 / rect.width, sy = 700 / rect.height;
+  const src = evt.touches ? evt.touches[0] : evt;
+  return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
+}
+
+function handleClick(evt) {
+  evt.preventDefault();
+  const { x, y } = getPos(evt);
+
+  if (screen === S.START) {
+    if (x >= 70 && x <= 320 && y >= 560 && y <= 624) {
+      screen = S.GAME;
+      round = 0; score = 0;
+      const a = toAngles(12, 0);
+      curH = a.hA; curM = a.mA;
+      startRound();
     }
+    return;
+  }
+
+  if (screen === S.END) {
+    if (x >= 70 && x <= 320 && y >= 530 && y <= 594) {
+      screen = S.GAME;
+      round = 0; score = 0;
+      const a = toAngles(12, 0);
+      curH = a.hA; curM = a.mA;
+      startRound();
+    }
+    return;
+  }
+
+  if (screen === S.GAME && !answered && !anim.active) {
+    const bW = 158, bH = 62, gX = 16, gY = 12;
+    const sX = (390 - bW * 2 - gX) / 2;
+    const sY = 438;
+
+    options.forEach((opt, i) => {
+      const col = i % 2, row = Math.floor(i / 2);
+      const bx = sX + col * (bW + gX);
+      const by = sY + row * (bH + gY);
+      if (x >= bx && x <= bx + bW && y >= by && y <= by + bH) {
+        answered = true;
+        if (i === correctIdx) {
+          score++;
+          feedback = { text: 'Goed zo!', color: '#2ecc71' };
+          playChime();
+        } else {
+          feedback = { text: 'Helaas! Het was ' + fmt(targetTime[0], targetTime[1]), color: '#e74c3c' };
+          playBuzz();
+        }
+        setTimeout(() => {
+          round++;
+          if (round >= ROUNDS) {
+            screen = S.END;
+            spawnConfetti();
+            if (score >= 7) playWin();
+          } else {
+            startRound();
+          }
+        }, 1500);
+      }
+    });
   }
 }
 
-function handleAction(action, value) {
-  if (action === 'start') {
-    STATE.screen = 'play';
-    STATE.score = 0;
-    STATE.round = 0;
-    STATE.level = 0;
-    pickRound();
-  } else if (action === 'answer') {
-    if (STATE.chosen !== null) return;
-    STATE.chosen = value;
-    const correct = timeStr(STATE.targetHour, STATE.targetMinute);
-    if (value === correct) STATE.score++;
-    STATE.total++;
-  } else if (action === 'next') {
-    STATE.round++;
-    if (STATE.round >= STATE.maxRounds) {
-      STATE.screen = 'result';
-    } else {
-      pickRound();
-    }
-  } else if (action === 'restart') {
-    STATE.screen = 'play';
-    STATE.score = 0;
-    STATE.round = 0;
-    STATE.level = 0;
-    pickRound();
-  } else if (action === 'nextlevel') {
-    STATE.screen = 'play';
-    STATE.score = 0;
-    STATE.round = 0;
-    STATE.level = 1;
-    pickRound();
-  }
-}
+canvas.addEventListener('click', handleClick);
+canvas.addEventListener('touchstart', handleClick, { passive: false });
 
-canvas.ontouchstart = function(e) {
-  e.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const touch = e.changedTouches[0];
-  handleTap(
-    (touch.clientX - rect.left) * scaleX,
-    (touch.clientY - rect.top) * scaleY
-  );
-};
-
-canvas.onclick = function(e) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  handleTap(
-    (e.clientX - rect.left) * scaleX,
-    (e.clientY - rect.top) * scaleY
-  );
-};
-
-// ── Start ──────────────────────────────────────────────────
+// Init
+const initA = toAngles(12, 0);
+curH = initA.hA; curM = initA.mA;
 requestAnimationFrame(loop);
 </script>
 </body>
