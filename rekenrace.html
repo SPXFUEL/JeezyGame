@@ -6,81 +6,214 @@
 <title>Rekenrace</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    overflow: hidden;
-  }
-  canvas { display: block; }
+  body { background: #0a1a0a; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Arial Rounded MT Bold', Arial, sans-serif; }
+  canvas { display: block; cursor: pointer; touch-action: none; }
 </style>
 </head>
 <body>
-<canvas id="game" width="390" height="700"></canvas>
+<canvas id="c"></canvas>
 <script>
-const canvas = document.getElementById('game');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+canvas.width = 390;
+canvas.height = 700;
 
-// ── Constanten ─────────────────────────────────────────────
-const TRACK_LEFT   = 20;
-const TRACK_RIGHT  = 370;
-const TRACK_WIDTH  = TRACK_RIGHT - TRACK_LEFT;
-const FINISH_X     = TRACK_RIGHT - 10;
-const START_X      = TRACK_LEFT + 10;
+function resize() {
+  const ratio = Math.min(window.innerWidth / 390, window.innerHeight / 700);
+  canvas.style.width = (390 * ratio) + 'px';
+  canvas.style.height = (700 * ratio) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
 
-const PLAYER_LANE_Y  = 200;
-const CPU_LANE_Y     = 290;
-
-const TOTAL_SOMMEN  = 10;
-const CPU_SPEED      = 0.008;   // per ms → fraction of track
-const PLAYER_BOOST   = 0.12;    // fraction boost per goed antwoord
-
-// ── State ──────────────────────────────────────────────────
-const G = {
-  screen: 'start',  // start | race | finish
-  playerPos: 0,     // 0..1 fraction
-  cpuPos: 0,
-  somIndex: 0,
-  sommen: [],
-  input: '',
-  feedback: null,   // null | 'goed' | 'fout'
-  feedbackTimer: 0,
-  winner: null,
-  lastTs: null,
-  buttons: [],
-  carAnim: 0,       // wielen animatie
-  smoke: [],
-  stars: []
-};
-
-// ── Sommen genereren ───────────────────────────────────────
-function generateSommen() {
-  const list = [];
-  for (let i = 0; i < TOTAL_SOMMEN; i++) {
-    if (i < 5) {
-      // Optellen 1-9
-      const a = Math.floor(Math.random() * 5) + 1;
-      const b = Math.floor(Math.random() * 5) + 1;
-      list.push({ a, b, op: '+', ans: a + b });
-    } else {
-      // Aftrekken
-      const ans = Math.floor(Math.random() * 5) + 1;
-      const a = ans + Math.floor(Math.random() * 4) + 1;
-      list.push({ a, b: a - ans, op: '-', ans });
-    }
-  }
-  // Shuffle licht
-  for (let i = list.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [list[i], list[j]] = [list[j], list[i]];
-  }
-  return list;
+// Audio
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
 }
 
-// ── Tekenhulpen ────────────────────────────────────────────
-function rr(x, y, w, h, r, fill, stroke, lw) {
+let engineNode = null, engineGain = null;
+function startEngine() {
+  try {
+    const ac = getAC();
+    if (engineNode) return;
+    engineNode = ac.createOscillator();
+    engineGain = ac.createGain();
+    const buf = ac.createOscillator();
+    const bufGain = ac.createGain();
+    engineNode.type = 'sawtooth';
+    engineNode.frequency.value = 82;
+    buf.type = 'square';
+    buf.frequency.value = 41;
+    engineGain.gain.value = 0.06;
+    bufGain.gain.value = 0.04;
+    engineNode.connect(engineGain);
+    buf.connect(bufGain);
+    engineGain.connect(ac.destination);
+    bufGain.connect(ac.destination);
+    engineNode.start();
+    buf.start();
+    engineNode._pair = buf;
+    engineNode._pairGain = bufGain;
+  } catch(e) {}
+}
+
+function stopEngine() {
+  try {
+    if (engineNode) {
+      engineNode.stop();
+      engineNode._pair.stop();
+      engineNode = null;
+      engineGain = null;
+    }
+  } catch(e) { engineNode = null; }
+}
+
+function playVroom() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = 'sawtooth';
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.setValueAtTime(150, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(300, ac.currentTime + 0.15);
+    o.frequency.exponentialRampToValueAtTime(100, ac.currentTime + 0.45);
+    g.gain.setValueAtTime(0.3, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5);
+    o.start(ac.currentTime);
+    o.stop(ac.currentTime + 0.5);
+  } catch(e) {}
+}
+
+function playBrake() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = 'sawtooth';
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.setValueAtTime(800, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(200, ac.currentTime + 0.35);
+    g.gain.setValueAtTime(0.2, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+    o.start(ac.currentTime);
+    o.stop(ac.currentTime + 0.4);
+  } catch(e) {}
+}
+
+function playFanfare() {
+  try {
+    const ac = getAC();
+    const seq = [523,659,784,1047,784,880,1047];
+    seq.forEach((f, i) => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = f;
+      o.type = 'square';
+      const t = ac.currentTime + i * 0.14;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.25, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.start(t);
+      o.stop(t + 0.4);
+    });
+  } catch(e) {}
+}
+
+function playTimeout() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = 'square';
+    o.frequency.value = 200;
+    o.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(0.2, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+    o.start(ac.currentTime);
+    o.stop(ac.currentTime + 0.4);
+  } catch(e) {}
+}
+
+// State
+const S = { START: 0, GAME: 1, END: 2 };
+let screen = S.START;
+let round = 0;
+let score = 0;
+const ROUNDS = 10;
+
+// Car
+let carX = 40;
+let carTargetX = 40;
+let carShake = 0;
+const TRACK_Y = 290;
+const CAR_W = 80, CAR_H = 36;
+const FINISH_X = 330;
+const START_X = 40;
+
+// Question
+let question = null;
+let options = [];
+let correctIdx = 0;
+let answered = false;
+let feedback = null;
+
+// Timer bar
+let timeLeft = 8;
+const TIME_PER_Q = 8;
+let timerRunning = false;
+
+// Exhaust particles
+let exhaust = [];
+// Confetti
+let confetti = [];
+
+// Speed lines
+let speedLines = [];
+let carMoving = false;
+
+function genQuestion() {
+  const isAdd = Math.random() > 0.4;
+  let a, b, ans;
+  if (isAdd) {
+    a = 1 + Math.floor(Math.random() * 9);
+    b = 1 + Math.floor(Math.random() * (11 - a));
+    ans = a + b;
+  } else {
+    ans = 1 + Math.floor(Math.random() * 9);
+    b = 1 + Math.floor(Math.random() * ans);
+    a = ans + b;
+  }
+  const correct = ans;
+  const opts = new Set([correct]);
+  while (opts.size < 4) {
+    let candidate = correct + Math.floor(Math.random() * 9) - 4;
+    if (candidate >= 0 && candidate !== correct) opts.add(candidate);
+  }
+  const arr = [...opts];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  correctIdx = arr.indexOf(correct);
+  question = { a, b, op: isAdd ? '+' : '-', ans };
+  options = arr;
+}
+
+function startRound() {
+  answered = false;
+  feedback = null;
+  timeLeft = TIME_PER_Q;
+  timerRunning = true;
+  genQuestion();
+  carMoving = false;
+}
+
+// Drawing
+function drawRoundedRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -92,555 +225,662 @@ function rr(x, y, w, h, r, fill, stroke, lw) {
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
 }
 
-// ── Achtergrond ────────────────────────────────────────────
-function drawBG() {
-  // Lucht
-  const sky = ctx.createLinearGradient(0, 0, 0, 160);
-  sky.addColorStop(0, '#87ceeb');
-  sky.addColorStop(1, '#e0f7fa');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, 390, 160);
+function drawRoad() {
+  const roadTop = TRACK_Y - 45;
+  const roadH = 90;
 
-  // Wolken
-  drawCloud(60, 50, 1);
-  drawCloud(240, 30, 0.8);
-  drawCloud(330, 70, 0.6);
+  // Road surface gradient
+  const rg = ctx.createLinearGradient(0, roadTop, 0, roadTop + roadH);
+  rg.addColorStop(0, '#3a3a3a');
+  rg.addColorStop(0.5, '#4a4a4a');
+  rg.addColorStop(1, '#3a3a3a');
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, roadTop, 390, roadH);
 
-  // Wegdek achtergrond
-  ctx.fillStyle = '#4e342e';
-  ctx.fillRect(0, 160, 390, 360);
+  // Road edges
+  ctx.fillStyle = '#f0c030';
+  ctx.fillRect(0, roadTop, 390, 5);
+  ctx.fillRect(0, roadTop + roadH - 5, 390, 5);
 
-  // Gras zijkanten
-  ctx.fillStyle = '#388e3c';
-  ctx.fillRect(0, 155, 390, 15);
-  ctx.fillRect(0, 515, 390, 15);
+  // Center dashes
+  ctx.fillStyle = '#f0f0f0';
+  for (let dx = 0; dx < 390; dx += 48) {
+    ctx.fillRect(dx, TRACK_Y - 3, 30, 6);
+  }
 
-  // Asfalt
-  ctx.fillStyle = '#546e7a';
-  ctx.fillRect(0, 170, 390, 340);
-
-  // Witte baan-strepen
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3;
-  ctx.setLineDash([30, 20]);
-  ctx.beginPath();
-  ctx.moveTo(0, 252);
-  ctx.lineTo(390, 252);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Finish lijn
-  drawFinish();
+  // Road texture dots (subtle)
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  for (let i = 0; i < 20; i++) {
+    ctx.beginPath();
+    ctx.arc(i * 22 + 5, roadTop + 15, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(i * 22 + 15, roadTop + roadH - 15, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
-function drawCloud(x, y, scale) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+function drawFinishLine() {
+  const fx = FINISH_X + 10;
+  const tileW = 8, tileH = 8;
+  const cols = 3, rows = 10;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      ctx.fillStyle = (row + col) % 2 === 0 ? '#ffffff' : '#000000';
+      ctx.fillRect(fx + col * tileW, TRACK_Y - 40 + row * tileH, tileW, tileH);
+    }
+  }
+  // Flag pole
+  ctx.fillStyle = '#c0c0c0';
+  ctx.fillRect(fx + cols * tileW, TRACK_Y - 50, 4, 50);
+  // Flag
+  ctx.fillStyle = '#ff0000';
   ctx.beginPath();
-  ctx.arc(0, 0, 25, 0, Math.PI * 2);
-  ctx.arc(30, -5, 20, 0, Math.PI * 2);
-  ctx.arc(55, 0, 22, 0, Math.PI * 2);
+  ctx.moveTo(fx + cols * tileW + 4, TRACK_Y - 50);
+  ctx.lineTo(fx + cols * tileW + 22, TRACK_Y - 42);
+  ctx.lineTo(fx + cols * tileW + 4, TRACK_Y - 34);
+  ctx.closePath();
   ctx.fill();
+}
+
+function drawCar(x, carY, shake) {
+  const sx = shake ? Math.sin(Date.now() * 0.05) * 4 : 0;
+  const bx = x + sx;
+  const by = carY - CAR_H / 2;
+
+  ctx.save();
+
+  // Car shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(bx + CAR_W / 2, by + CAR_H + 8, CAR_W / 2 + 4, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Car body
+  const bodyGrad = ctx.createLinearGradient(bx, by, bx, by + CAR_H);
+  bodyGrad.addColorStop(0, '#5ab4ff');
+  bodyGrad.addColorStop(0.4, '#2288ee');
+  bodyGrad.addColorStop(1, '#0055bb');
+  drawRoundedRect(bx, by + 8, CAR_W, CAR_H - 8, 8);
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  // Car roof/cabin
+  const roofGrad = ctx.createLinearGradient(bx + 14, by, bx + 14, by + 16);
+  roofGrad.addColorStop(0, '#88ccff');
+  roofGrad.addColorStop(1, '#2288ee');
+  drawRoundedRect(bx + 14, by, CAR_W - 30, 18, 6);
+  ctx.fillStyle = roofGrad;
+  ctx.fill();
+
+  // Windshield
+  ctx.fillStyle = 'rgba(180,230,255,0.75)';
+  drawRoundedRect(bx + 38, by + 2, CAR_W - 52, 13, 4);
+  ctx.fill();
+
+  // Rear window
+  ctx.fillStyle = 'rgba(180,230,255,0.6)';
+  drawRoundedRect(bx + 16, by + 2, 18, 13, 4);
+  ctx.fill();
+
+  // Wheel wells
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.ellipse(bx + 16, by + CAR_H, 12, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(bx + CAR_W - 14, by + CAR_H, 12, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wheels
+  function drawWheel(wx, wy) {
+    const tireG = ctx.createRadialGradient(wx, wy, 2, wx, wy, 10);
+    tireG.addColorStop(0, '#555');
+    tireG.addColorStop(1, '#111');
+    ctx.beginPath();
+    ctx.arc(wx, wy, 10, 0, Math.PI * 2);
+    ctx.fillStyle = tireG;
+    ctx.fill();
+    // Hub
+    ctx.beginPath();
+    ctx.arc(wx, wy, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fill();
+    // Spokes
+    for (let s = 0; s < 4; s++) {
+      const sa = s * Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(wx + Math.cos(sa) * 5, wy + Math.sin(sa) * 5);
+      ctx.lineTo(wx + Math.cos(sa) * 10, wy + Math.sin(sa) * 10);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#888';
+      ctx.stroke();
+    }
+  }
+  drawWheel(bx + 16, by + CAR_H + 2);
+  drawWheel(bx + CAR_W - 14, by + CAR_H + 2);
+
+  // Headlight
+  ctx.fillStyle = '#ffe080';
+  drawRoundedRect(bx + CAR_W - 6, by + 12, 7, 8, 3);
+  ctx.fill();
+
+  // Tail light
+  ctx.fillStyle = '#ff2020';
+  drawRoundedRect(bx - 1, by + 12, 6, 8, 3);
+  ctx.fill();
+
+  // Side stripe
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(bx + 4, by + 14, CAR_W - 18, 3);
+
   ctx.restore();
 }
 
-function drawFinish() {
-  const fx = TRACK_LEFT + FINISH_X * 1;
-  // Finishlijn checkered
-  const squareSize = 8;
-  const lineX = TRACK_RIGHT - 5;
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 2; col++) {
-      const isBlack = (row + col) % 2 === 0;
-      ctx.fillStyle = isBlack ? '#000' : '#fff';
-      ctx.fillRect(lineX + col * squareSize, 170 + row * squareSize * 2, squareSize, squareSize * 2);
-    }
+function drawSpeedLines(x, y) {
+  speedLines.forEach(l => {
+    ctx.strokeStyle = 'rgba(255,255,255,' + l.alpha + ')';
+    ctx.lineWidth = l.width;
+    ctx.beginPath();
+    ctx.moveTo(l.x, l.y);
+    ctx.lineTo(l.x + l.len, l.y);
+    ctx.stroke();
+  });
+}
+
+function drawExhaust() {
+  exhaust.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(180,180,180,' + p.alpha + ')';
+    ctx.fill();
+  });
+}
+
+function drawBackground() {
+  // Sky
+  const sky = ctx.createLinearGradient(0, 0, 0, TRACK_Y - 45);
+  sky.addColorStop(0, '#87ceeb');
+  sky.addColorStop(1, '#c8e8f8');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 390, TRACK_Y - 45);
+
+  // Ground
+  const ground = ctx.createLinearGradient(0, TRACK_Y + 45, 0, 700);
+  ground.addColorStop(0, '#4a7c20');
+  ground.addColorStop(1, '#2a5010');
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, TRACK_Y + 45, 390, 700 - (TRACK_Y + 45));
+
+  // Hills
+  ctx.fillStyle = '#5a9030';
+  ctx.beginPath();
+  ctx.ellipse(80, TRACK_Y - 55, 100, 50, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(280, TRACK_Y - 60, 120, 55, 0, Math.PI, 0);
+  ctx.fill();
+
+  // Clouds
+  function drawCloud(cx, cy, s) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 22 * s, cy + 5 * s, 14 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx - 20 * s, cy + 5 * s, 13 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 8 * s, cy - 12 * s, 14 * s, 0, Math.PI * 2); ctx.fill();
   }
-  // Vlag
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(lineX + 16, 110, 3, 60);
-  ctx.fillStyle = '#000';
-  // checkered vlag
-  for (let ry = 0; ry < 4; ry++) {
-    for (let rx = 0; rx < 4; rx++) {
-      if ((ry + rx) % 2 === 0) ctx.fillStyle = '#000';
-      else ctx.fillStyle = '#fff';
-      ctx.fillRect(lineX + 19 + rx * 8, 110 + ry * 8, 8, 8);
-    }
+  drawCloud(80, 60, 1);
+  drawCloud(260, 80, 1.2);
+  drawCloud(170, 40, 0.8);
+}
+
+function drawTimerBar() {
+  const barW = 350, barH = 14;
+  const bx = 20, by = 60;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  drawRoundedRect(bx, by, barW, barH, 7);
+  ctx.fill();
+
+  const pct = Math.max(0, timeLeft / TIME_PER_Q);
+  const col = pct > 0.5 ? '#2ecc71' : pct > 0.25 ? '#f39c12' : '#e74c3c';
+  if (pct > 0) {
+    ctx.fillStyle = col;
+    drawRoundedRect(bx, by, barW * pct, barH, 7);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '11px Arial';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(Math.ceil(timeLeft) + 's', 375, by + barH / 2);
+}
+
+function drawQuestion() {
+  if (!question) return;
+  const qText = question.a + ' ' + question.op + ' ' + question.b + ' = ?';
+
+  // Card
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 5;
+  drawRoundedRect(55, 380, 280, 80, 18);
+  const cg = ctx.createLinearGradient(55, 380, 55, 460);
+  cg.addColorStop(0, '#2a4a2a');
+  cg.addColorStop(1, '#1a3a1a');
+  ctx.fillStyle = cg;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(qText, 195, 420);
+}
+
+function drawButtons() {
+  const bW = 158, bH = 62, gX = 16, gY = 12;
+  const sX = (390 - bW * 2 - gX) / 2;
+  const sY = 490;
+
+  options.forEach((opt, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const bx = sX + col * (bW + gX);
+    const by = sY + row * (bH + gY);
+
+    let bg = '#1a4a1a';
+    if (answered) bg = i === correctIdx ? '#1a7a30' : '#7a1a1a';
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 4;
+    drawRoundedRect(bx, by, bW, bH, 18);
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(opt), bx + bW / 2, by + bH / 2);
+  });
+}
+
+function drawProgressBar() {
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  drawRoundedRect(20, 14, 350, 10, 5);
+  ctx.fill();
+  ctx.fillStyle = '#ffd700';
+  const pw = (round / ROUNDS) * 350;
+  if (pw > 0) { drawRoundedRect(20, 14, pw, 10, 5); ctx.fill(); }
+}
+
+function drawGame() {
+  drawBackground();
+  drawRoad();
+  drawFinishLine();
+  drawExhaust();
+  drawSpeedLines();
+  drawCar(carX - CAR_W / 2, TRACK_Y, carShake > 0);
+
+  // HUD overlay area
+  ctx.fillStyle = 'rgba(0,20,0,0.55)';
+  ctx.fillRect(0, 0, 390, 80);
+
+  // Header
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 19px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Vraag ' + (round + 1) + '/' + ROUNDS, 20, 0);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'right';
+  ctx.fillText('Score: ' + score, 372, 0);
+
+  drawProgressBar();
+  drawTimerBar();
+
+  drawQuestion();
+  drawButtons();
+
+  if (feedback) {
+    ctx.save();
+    ctx.shadowColor = feedback.color;
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = feedback.color;
+    ctx.font = 'bold 28px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(feedback.text, 195, 466);
+    ctx.restore();
   }
 }
 
-// ── Auto tekenen ───────────────────────────────────────────
-function drawCar(fracPos, laneY, color, wheelAnim) {
-  const carW = 70, carH = 32;
-  const x = TRACK_LEFT + fracPos * (TRACK_WIDTH - carW);
-  const y = laneY - carH / 2;
+function drawStart() {
+  drawBackground();
+  drawRoad();
+  drawFinishLine();
+  drawCar(START_X, TRACK_Y, false);
 
+  // Title backdrop
   ctx.save();
-
-  // Schaduw
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.beginPath();
-  ctx.ellipse(x + carW/2, y + carH + 4, carW*0.45, 6, 0, 0, Math.PI * 2);
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 25;
+  drawRoundedRect(25, 60, 340, 100, 20);
+  const tg = ctx.createLinearGradient(25, 60, 25, 160);
+  tg.addColorStop(0, '#1a5a0a');
+  tg.addColorStop(1, '#0a3a04');
+  ctx.fillStyle = tg;
   ctx.fill();
+  ctx.restore();
 
-  // Carrosserie onderkant
-  rr(x, y + 10, carW, carH - 10, 6, color, null);
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 50px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Rekenrace!', 195, 95);
 
-  // Dak (cabine)
-  rr(x + 12, y, carW - 28, 20, 5, color, null);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = '20px Arial';
+  ctx.fillText('Rij naar de finish!', 195, 140);
 
-  // Ramen
-  rr(x + 15, y + 3, 14, 12, 3, '#b3e5fc', null);
-  rr(x + 32, y + 3, 14, 12, 3, '#b3e5fc', null);
-
-  // Highlights
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  rr(x + 3, y + 14, carW - 6, 5, 2, 'rgba(255,255,255,0.25)', null);
-
-  // Lichten voor
-  ctx.fillStyle = '#fff59d';
-  ctx.beginPath();
-  ctx.ellipse(x + carW - 5, y + 22, 4, 5, 0, 0, Math.PI * 2);
+  // Info
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  drawRoundedRect(40, 370, 310, 120, 16);
   ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '18px Arial';
+  ctx.fillText('Beantwoord sommen zo snel', 195, 398);
+  ctx.fillText('mogelijk. 8 seconden per vraag.', 195, 422);
+  ctx.fillText('10 sommen tot de finish!', 195, 446);
+  ctx.fillStyle = '#80ff80';
+  ctx.fillText('Optellen en aftrekken tot 10', 195, 472);
 
-  // Lichten achter
-  ctx.fillStyle = '#ef5350';
-  ctx.beginPath();
-  ctx.ellipse(x + 5, y + 22, 3, 5, 0, 0, Math.PI * 2);
+  // Start button
+  const sg = ctx.createLinearGradient(70, 530, 70, 594);
+  sg.addColorStop(0, '#2ecc71');
+  sg.addColorStop(1, '#1a9950');
+  ctx.save();
+  ctx.shadowColor = 'rgba(46,204,113,0.6)';
+  ctx.shadowBlur = 20;
+  drawRoundedRect(70, 530, 250, 64, 32);
+  ctx.fillStyle = sg;
   ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 30px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Start Race!', 195, 562);
 
-  // Wielen
-  const wheelY = y + carH - 2;
-  const wheelR = 9;
-  const wheelOffsets = [x + 14, x + carW - 18];
-  wheelOffsets.forEach(function(wx) {
-    // Band
-    ctx.beginPath();
-    ctx.arc(wx, wheelY, wheelR, 0, Math.PI * 2);
-    ctx.fillStyle = '#212121';
-    ctx.fill();
-    // Velg
-    ctx.beginPath();
-    ctx.arc(wx, wheelY, wheelR - 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#bdbdbd';
-    ctx.fill();
-    // Spaak animatie
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '17px Arial';
+  ctx.fillText('Leeftijd 5-6 jaar', 195, 650);
+}
+
+function drawEnd() {
+  drawBackground();
+  drawRoad();
+  drawFinishLine();
+  drawCar(Math.min(carX, FINISH_X) - CAR_W / 2, TRACK_Y, false);
+
+  confetti.forEach(p => {
     ctx.save();
-    ctx.translate(wx, wheelY);
-    ctx.rotate(wheelAnim);
-    ctx.strokeStyle = '#757575';
-    ctx.lineWidth = 1.5;
-    for (let s = 0; s < 4; s++) {
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, -(wheelR - 3));
-      ctx.stroke();
-      ctx.rotate(Math.PI / 2);
-    }
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
     ctx.restore();
   });
 
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 25;
+  drawRoundedRect(30, 100, 330, 100, 20);
+  const tg = ctx.createLinearGradient(30, 100, 30, 200);
+  tg.addColorStop(0, '#1a5a0a');
+  tg.addColorStop(1, '#0a3a04');
+  ctx.fillStyle = tg;
+  ctx.fill();
   ctx.restore();
-}
 
-// ── Uitlaatgas ────────────────────────────────────────────
-function addSmoke(x, y) {
-  for (let i = 0; i < 5; i++) {
-    G.smoke.push({
-      x: x + Math.random() * 10 - 5,
-      y: y,
-      r: 4 + Math.random() * 4,
-      a: 0.6,
-      vx: -(1 + Math.random() * 2),
-      vy: -0.5 + Math.random()
-    });
-  }
-}
-
-function updateSmoke(dt) {
-  for (let i = G.smoke.length - 1; i >= 0; i--) {
-    const s = G.smoke[i];
-    s.x += s.vx * dt * 0.03;
-    s.y += s.vy * dt * 0.03;
-    s.r += dt * 0.01;
-    s.a -= dt * 0.001;
-    if (s.a <= 0) G.smoke.splice(i, 1);
-  }
-}
-
-function drawSmoke() {
-  G.smoke.forEach(function(s) {
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(200,200,200,' + s.a + ')';
-    ctx.fill();
-  });
-}
-
-// ── Sterpunten animatie ───────────────────────────────────
-function addStars(x, y) {
-  for (let i = 0; i < 8; i++) {
-    const ang = (i / 8) * Math.PI * 2;
-    G.stars.push({
-      x, y,
-      vx: Math.cos(ang) * (2 + Math.random() * 2),
-      vy: Math.sin(ang) * (2 + Math.random() * 2),
-      life: 1
-    });
-  }
-}
-
-function updateStars(dt) {
-  for (let i = G.stars.length - 1; i >= 0; i--) {
-    const s = G.stars[i];
-    s.x += s.vx;
-    s.y += s.vy;
-    s.life -= dt * 0.002;
-    if (s.life <= 0) G.stars.splice(i, 1);
-  }
-}
-
-function drawStars() {
-  G.stars.forEach(function(s) {
-    ctx.font = '18px Arial';
-    ctx.globalAlpha = s.life;
-    ctx.textAlign = 'center';
-    ctx.fillText('⭐', s.x, s.y);
-  });
-  ctx.globalAlpha = 1;
-}
-
-// ── Numpad ────────────────────────────────────────────────
-const PAD_KEYS = ['7','8','9','4','5','6','1','2','3','⌫','0','✓'];
-const PAD_COLS = 3;
-const PAD_ROWS = 4;
-const PAD_BTN_W = 90;
-const PAD_BTN_H = 65;
-const PAD_GAP = 10;
-const PAD_START_X = (390 - (PAD_COLS * PAD_BTN_W + (PAD_COLS - 1) * PAD_GAP)) / 2;
-const PAD_START_Y = 530;
-
-function drawNumpad() {
-  // Achtergrond numpad
-  rr(10, 520, 370, 170, 16, 'rgba(0,0,0,0.5)', null);
-
-  PAD_KEYS.forEach(function(k, i) {
-    const col = i % PAD_COLS;
-    const row = Math.floor(i / PAD_COLS);
-    const bx = PAD_START_X + col * (PAD_BTN_W + PAD_GAP);
-    const by = PAD_START_Y + row * (PAD_BTN_H + PAD_GAP);
-
-    let bg = '#1565c0';
-    if (k === '⌫') bg = '#c62828';
-    if (k === '✓') bg = '#2e7d32';
-
-    rr(bx, by, PAD_BTN_W, PAD_BTN_H, 12, bg, 'rgba(255,255,255,0.2)', 2);
-
-    ctx.fillStyle = '#fff';
-    ctx.font = k === '⌫' || k === '✓' ? '28px Arial' : 'bold 28px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(k, bx + PAD_BTN_W / 2, by + PAD_BTN_H / 2);
-    ctx.textBaseline = 'alphabetic';
-  });
-}
-
-function getPadButtons() {
-  const btns = [];
-  PAD_KEYS.forEach(function(k, i) {
-    const col = i % PAD_COLS;
-    const row = Math.floor(i / PAD_COLS);
-    const bx = PAD_START_X + col * (PAD_BTN_W + PAD_GAP);
-    const by = PAD_START_Y + row * (PAD_BTN_H + PAD_GAP);
-    btns.push({ x: bx, y: by, w: PAD_BTN_W, h: PAD_BTN_H, key: k });
-  });
-  return btns;
-}
-
-// ── Voortgangsbalk ────────────────────────────────────────
-function drawProgress() {
-  // Auto positie als progress
-  const trackY = 530;
-  rr(20, 510, 350, 14, 7, 'rgba(255,255,255,0.15)', null);
-  // Speler balk
-  rr(20, 510, 350 * G.playerPos, 14, 7, '#f44336', null);
-  // CPU balk
-  ctx.fillStyle = 'rgba(0,200,83,0.6)';
-  ctx.fillRect(20, 510, 350 * G.cpuPos, 7);
-}
-
-// ── HUD ───────────────────────────────────────────────────
-function drawHUD() {
-  if (G.screen !== 'race') return;
-  const som = G.sommen[G.somIndex];
-
-  // Som display
-  rr(10, 360, 370, 70, 14, 'rgba(0,0,0,0.55)', 'rgba(255,255,255,0.2)', 2);
-
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 36px Arial';
+  ctx.fillStyle = '#ffd700';
+  ctx.font = 'bold 44px Arial';
   ctx.textAlign = 'center';
-  const somStr = som.a + ' ' + som.op + ' ' + som.b + ' = ' + (G.input || '?');
-  ctx.fillText(somStr, 195, 405);
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Race Voltooid!', 195, 140);
+  ctx.fillStyle = '#80ff80';
+  ctx.font = 'bold 22px Arial';
+  ctx.fillText('Finish!', 195, 180);
 
-  // Feedback
-  if (G.feedback === 'goed') {
-    ctx.fillStyle = '#69f0ae';
-    ctx.font = 'bold 22px Arial';
-    ctx.fillText('Goed! +boost 🚀', 195, 440);
-  } else if (G.feedback === 'fout') {
-    ctx.fillStyle = '#ff5252';
-    ctx.font = 'bold 22px Arial';
-    const correct = som.ans;
-    ctx.fillText('Fout! Het was ' + correct, 195, 440);
-  }
+  // Score
+  const cg = ctx.createRadialGradient(185, 328, 8, 195, 335, 88);
+  cg.addColorStop(0, '#ffe04a');
+  cg.addColorStop(1, '#e08010');
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,200,0,0.5)';
+  ctx.shadowBlur = 28;
+  ctx.beginPath();
+  ctx.arc(195, 335, 88, 0, Math.PI * 2);
+  ctx.fillStyle = cg;
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  ctx.restore();
 
-  // Sommennummer
-  ctx.fillStyle = '#ffe082';
-  ctx.font = '18px Arial';
-  ctx.textAlign = 'right';
-  ctx.fillText('Som ' + (G.somIndex + 1) + '/' + TOTAL_SOMMEN, 380, 445);
-}
-
-// ── Start scherm ──────────────────────────────────────────
-function drawStart() {
-  // Achtergrond
-  const bg = ctx.createLinearGradient(0, 0, 0, 700);
-  bg.addColorStop(0, '#1a237e');
-  bg.addColorStop(1, '#283593');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 390, 700);
-
-  // Titel
-  rr(20, 60, 350, 100, 20, '#f57f17', '#e65100', 4);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 40px Arial';
+  ctx.fillStyle = '#1a3a0a';
+  ctx.font = 'bold 56px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('🏎 Rekenrace!', 195, 120);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(score + '/' + ROUNDS, 195, 335);
 
-  // Auto preview
-  drawCar(0.1, 300, '#f44336', G.carAnim);
-  drawCar(0.5, 380, '#43a047', G.carAnim);
-
-  ctx.fillStyle = '#fff';
-  ctx.font = '22px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('Los de sommen op!', 195, 460);
-  ctx.font = '18px Arial';
-  ctx.fillStyle = '#b3e5fc';
-  ctx.fillText('Rij jij sneller dan de computer?', 195, 492);
-
-  rr(95, 540, 200, 80, 20, '#4caf50', '#388e3c', 4);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 28px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('START! 🚦', 195, 588);
-
-  G.buttons = [{ x: 95, y: 540, w: 200, h: 80, action: 'start' }];
-}
-
-// ── Finish scherm ─────────────────────────────────────────
-function drawFinishScreen() {
-  const bg = ctx.createLinearGradient(0, 0, 0, 700);
-  bg.addColorStop(0, G.winner === 'player' ? '#1b5e20' : '#b71c1c');
-  bg.addColorStop(1, G.winner === 'player' ? '#2e7d32' : '#c62828');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 390, 700);
-
-  ctx.font = '80px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(G.winner === 'player' ? '🏆' : '😢', 195, 180);
-
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 40px Arial';
-  ctx.fillText(G.winner === 'player' ? 'GEWONNEN!' : 'Verloren...', 195, 260);
-
-  ctx.font = '22px Arial';
-  ctx.fillStyle = '#ffe082';
-  ctx.fillText(G.winner === 'player' ? 'Wat een rekenaar! 🎉' : 'Probeer het nog eens!', 195, 310);
-
-  // Stats
-  rr(40, 350, 310, 90, 16, 'rgba(255,255,255,0.15)', null);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 24px Arial';
-  ctx.fillText('Jouw score: ' + G.somIndex + '/' + TOTAL_SOMMEN, 195, 395);
-  ctx.font = '18px Arial';
-  ctx.fillStyle = '#b3e5fc';
-  const pct = Math.round((G.playerPos / 1) * 100);
-  ctx.fillText('Afstand afgelegd: ' + Math.min(100, Math.round(G.playerPos * 100)) + '%', 195, 425);
-
-  // Opnieuw knop
-  rr(95, 480, 200, 80, 20, '#1565c0', '#0d47a1', 4);
-  ctx.fillStyle = '#fff';
+  const msgs = ['Oefenen!', 'Goed bezig!', 'Geweldig!', 'Kampioen!'];
+  const mi = score >= 9 ? 3 : score >= 7 ? 2 : score >= 5 ? 1 : 0;
+  ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 26px Arial';
-  ctx.fillText('Opnieuw!', 195, 527);
+  ctx.fillText(msgs[mi], 195, 450);
 
-  G.buttons = [{ x: 95, y: 480, w: 200, h: 80, action: 'restart' }];
+  const rg = ctx.createLinearGradient(70, 520, 70, 584);
+  rg.addColorStop(0, '#2ecc71');
+  rg.addColorStop(1, '#1a9950');
+  ctx.save();
+  ctx.shadowColor = 'rgba(46,204,113,0.5)';
+  ctx.shadowBlur = 18;
+  drawRoundedRect(70, 520, 250, 64, 32);
+  ctx.fillStyle = rg;
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 30px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Opnieuw!', 195, 552);
 }
 
-// ── Game loop ──────────────────────────────────────────────
-function loop(ts) {
-  if (!G.lastTs) G.lastTs = ts;
-  const dt = ts - G.lastTs;
-  G.lastTs = ts;
+function spawnConfetti() {
+  confetti = [];
+  const colors = ['#ffd700','#e74c3c','#3498db','#2ecc71','#9b59b6','#ff6b6b','#00d2d3'];
+  for (let i = 0; i < 70; i++) {
+    confetti.push({
+      x: Math.random() * 390,
+      y: -20 - Math.random() * 400,
+      vx: (Math.random() - 0.5) * 3,
+      vy: 1.5 + Math.random() * 3.5,
+      rot: Math.random() * Math.PI * 2,
+      vrot: (Math.random() - 0.5) * 0.2,
+      color: colors[i % colors.length],
+      size: 7 + Math.random() * 10
+    });
+  }
+}
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  G.carAnim += dt * 0.005;
-
-  if (G.screen === 'start') {
-    drawStart();
-  } else if (G.screen === 'race') {
-    // CPU beweegt constant
-    G.cpuPos = Math.min(1, G.cpuPos + CPU_SPEED * (dt / 16));
-
-    updateSmoke(dt);
-    updateStars(dt);
-
-    if (G.feedback) {
-      G.feedbackTimer -= dt;
-      if (G.feedbackTimer <= 0) G.feedback = null;
+function update(dt) {
+  // Car movement
+  if (carX < carTargetX) {
+    carX = Math.min(carX + dt * 180, carTargetX);
+    carMoving = true;
+    // Exhaust
+    if (Math.random() < 0.3) {
+      exhaust.push({
+        x: carX - CAR_W / 2 - 2,
+        y: TRACK_Y + CAR_H / 4,
+        vx: -1.5 - Math.random(),
+        vy: (Math.random() - 0.5) * 0.8,
+        r: 4 + Math.random() * 5,
+        alpha: 0.5 + Math.random() * 0.3
+      });
     }
-
-    // Win check
-    if (G.playerPos >= 1) {
-      G.winner = 'player';
-      G.screen = 'finish';
-    } else if (G.cpuPos >= 1) {
-      G.winner = 'cpu';
-      G.screen = 'finish';
+    // Speed lines
+    if (Math.random() < 0.25) {
+      speedLines.push({
+        x: carX - CAR_W / 2 - 10 - Math.random() * 30,
+        y: TRACK_Y - 10 + Math.random() * 20,
+        len: 15 + Math.random() * 25,
+        alpha: 0.4 + Math.random() * 0.4,
+        width: 1 + Math.random() * 2,
+        life: 0.15
+      });
     }
-
-    drawBG();
-    drawSmoke();
-
-    // CPU auto (groen)
-    const cpuCarW = 70;
-    const cpuX = TRACK_LEFT + G.cpuPos * (TRACK_WIDTH - cpuCarW);
-    addSmoke(cpuX, CPU_LANE_Y);
-    drawCar(G.cpuPos, CPU_LANE_Y, '#43a047', G.carAnim * 1.2);
-
-    // Speler auto (rood)
-    const playerCarW = 70;
-    const playerX = TRACK_LEFT + G.playerPos * (TRACK_WIDTH - playerCarW);
-    drawCar(G.playerPos, PLAYER_LANE_Y, '#f44336', G.carAnim);
-
-    drawStars();
-
-    // Labels
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('🔴 JIJ', TRACK_LEFT + 5, PLAYER_LANE_Y - 26);
-    ctx.fillText('🟢 CPU', TRACK_LEFT + 5, CPU_LANE_Y - 26);
-
-    drawHUD();
-    drawNumpad();
-
-    G.buttons = getPadButtons();
-  } else if (G.screen === 'finish') {
-    drawFinishScreen();
-    updateStars(dt);
-    drawStars();
-    if (G.winner === 'player') addStars(195 + Math.random() * 100 - 50, 100 + Math.random() * 50);
+  } else {
+    carMoving = false;
   }
 
+  // Exhaust particles
+  exhaust.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.r += 0.4;
+    p.alpha -= 0.025;
+  });
+  exhaust = exhaust.filter(p => p.alpha > 0);
+
+  // Speed lines
+  speedLines.forEach(l => { l.life -= dt; l.x -= 4; l.alpha -= dt * 3; });
+  speedLines = speedLines.filter(l => l.life > 0 && l.alpha > 0);
+
+  // Shake
+  if (carShake > 0) carShake -= dt;
+
+  // Timer
+  if (screen === S.GAME && timerRunning && !answered) {
+    timeLeft -= dt;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      timerRunning = false;
+      answered = true;
+      feedback = { text: 'Tijd! Het was ' + question.ans, color: '#e74c3c' };
+      playTimeout();
+      setTimeout(nextRound, 1600);
+    }
+  }
+
+  if (screen === S.END) {
+    confetti.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.rot += p.vrot;
+      if (p.y > 720) p.y = -20;
+    });
+  }
+}
+
+function nextRound() {
+  round++;
+  if (round >= ROUNDS) {
+    screen = S.END;
+    stopEngine();
+    spawnConfetti();
+    if (score >= 7) playFanfare();
+  } else {
+    startRound();
+  }
+}
+
+let lastTs = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+  update(dt);
+  ctx.clearRect(0, 0, 390, 700);
+  if (screen === S.START) drawStart();
+  else if (screen === S.GAME) drawGame();
+  else drawEnd();
   requestAnimationFrame(loop);
 }
 
-// ── Input ──────────────────────────────────────────────────
-function handleTap(x, y) {
-  for (let i = 0; i < G.buttons.length; i++) {
-    const b = G.buttons[i];
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-      if (b.action) handleAction(b.action);
-      else if (b.key) handleKey(b.key);
-      return;
-    }
-  }
-}
-
-function handleAction(action) {
-  if (action === 'start') {
-    G.screen = 'race';
-    G.playerPos = 0;
-    G.cpuPos = 0;
-    G.somIndex = 0;
-    G.sommen = generateSommen();
-    G.input = '';
-    G.feedback = null;
-    G.smoke = [];
-    G.stars = [];
-    G.winner = null;
-  } else if (action === 'restart') {
-    G.screen = 'start';
-  }
-}
-
-function handleKey(key) {
-  if (G.screen !== 'race') return;
-  if (G.feedback) return;  // Wacht op feedback cooldown
-  if (G.somIndex >= TOTAL_SOMMEN) return;
-
-  if (key === '⌫') {
-    G.input = G.input.slice(0, -1);
-  } else if (key === '✓') {
-    if (G.input === '') return;
-    const ans = parseInt(G.input, 10);
-    const correct = G.sommen[G.somIndex].ans;
-    const carW = 70;
-
-    if (ans === correct) {
-      G.playerPos = Math.min(1, G.playerPos + PLAYER_BOOST);
-      G.feedback = 'goed';
-      // Voeg sterren toe bij speler positie
-      const px = TRACK_LEFT + G.playerPos * (TRACK_WIDTH - carW) + carW / 2;
-      addStars(px, PLAYER_LANE_Y - 20);
-    } else {
-      G.feedback = 'fout';
-    }
-    G.feedbackTimer = 1200;
-    G.input = '';
-    G.somIndex = Math.min(TOTAL_SOMMEN - 1, G.somIndex + 1);
-
-    if (G.somIndex >= TOTAL_SOMMEN) {
-      // Alle sommen klaar
-    }
-  } else {
-    if (G.input.length < 2) G.input += key;
-  }
-}
-
-canvas.ontouchstart = function(e) {
-  e.preventDefault();
+function getPos(evt) {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const touch = e.changedTouches[0];
-  handleTap(
-    (touch.clientX - rect.left) * scaleX,
-    (touch.clientY - rect.top) * scaleY
-  );
-};
+  const sx = 390 / rect.width, sy = 700 / rect.height;
+  const src = evt.touches ? evt.touches[0] : evt;
+  return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
+}
 
-canvas.onclick = function(e) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  handleTap(
-    (e.clientX - rect.left) * scaleX,
-    (e.clientY - rect.top) * scaleY
-  );
-};
+function initGame() {
+  round = 0; score = 0;
+  carX = START_X; carTargetX = START_X;
+  carShake = 0;
+  exhaust = []; speedLines = [];
+  screen = S.GAME;
+  startRound();
+  startEngine();
+}
 
-// ── Start ──────────────────────────────────────────────────
+function handleClick(evt) {
+  evt.preventDefault();
+  const { x, y } = getPos(evt);
+
+  if (screen === S.START) {
+    if (x >= 70 && x <= 320 && y >= 530 && y <= 594) initGame();
+    return;
+  }
+
+  if (screen === S.END) {
+    if (x >= 70 && x <= 320 && y >= 520 && y <= 584) initGame();
+    return;
+  }
+
+  if (screen === S.GAME && !answered && !carMoving) {
+    const bW = 158, bH = 62, gX = 16, gY = 12;
+    const sX = (390 - bW * 2 - gX) / 2;
+    const sY = 490;
+
+    options.forEach((opt, i) => {
+      const col = i % 2, row = Math.floor(i / 2);
+      const bx = sX + col * (bW + gX);
+      const by = sY + row * (bH + gY);
+      if (x >= bx && x <= bx + bW && y >= by && y <= by + bH) {
+        answered = true;
+        timerRunning = false;
+        if (i === correctIdx) {
+          score++;
+          feedback = { text: 'Goed zo!', color: '#2ecc71' };
+          // Move car based on time left (faster = more distance)
+          const timeBonus = timeLeft / TIME_PER_Q;
+          const dist = 20 + timeBonus * 25;
+          carTargetX = Math.min(carTargetX + dist, FINISH_X + CAR_W / 2);
+          playVroom();
+        } else {
+          feedback = { text: 'Helaas! Het was ' + question.ans, color: '#e74c3c' };
+          carShake = 0.4;
+          playBrake();
+        }
+        setTimeout(nextRound, 1500);
+      }
+    });
+  }
+}
+
+canvas.addEventListener('click', handleClick);
+canvas.addEventListener('touchstart', handleClick, { passive: false });
+
 requestAnimationFrame(loop);
 </script>
 </body>
