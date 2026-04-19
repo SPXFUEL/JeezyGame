@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Tafeltrein 🚂</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d0d2b;
+      font-family: 'Segoe UI', 'Arial Rounded MT Bold', Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+
+    #gameContainer {
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── HUD ── */
+    #hud {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.07);
+      border-bottom: 2px solid rgba(180,100,255,0.3);
+    }
+
+    #hud .hud-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #hud .hud-label {
+      font-size: 11px;
+      color: #a88fff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #hud .hud-value {
+      font-size: 22px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    #hud .hud-value.orange { color: #ff9933; }
+    #hud .hud-value.green  { color: #44dd88; }
+
+    #progressBar {
+      width: 100%;
+      height: 6px;
+      background: rgba(255,255,255,0.1);
+    }
+    #progressFill {
+      height: 6px;
+      background: linear-gradient(90deg, #8833ff, #ff6600);
+      transition: width 0.3s;
+    }
+
+    /* ── CANVAS ── */
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      max-width: 800px;
+      cursor: default;
+    }
+
+    /* ── ANSWER BUTTONS ── */
+    #answerArea {
+      width: 100%;
+      max-width: 800px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.4);
+    }
+
+    .answerBtn {
+      background: linear-gradient(145deg, #3b1a6e, #5522aa);
+      border: 3px solid #8844ff;
+      border-radius: 16px;
+      color: #fff;
+      font-size: 28px;
+      font-weight: 900;
+      padding: 16px 8px;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.15s, border-color 0.15s;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      text-align: center;
+      letter-spacing: 1px;
+    }
+
+    .answerBtn:active { transform: scale(0.95); }
+
+    .answerBtn.correct {
+      background: linear-gradient(145deg, #1a6e2e, #22aa44);
+      border-color: #44ff88;
+      animation: popCorrect 0.4s ease;
+    }
+
+    .answerBtn.wrong {
+      background: linear-gradient(145deg, #6e1a1a, #aa2222);
+      border-color: #ff4444;
+      animation: shakeWrong 0.4s ease;
+    }
+
+    @keyframes popCorrect {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.12); }
+      100% { transform: scale(1); }
+    }
+    @keyframes shakeWrong {
+      0%,100% { transform: translateX(0); }
+      20%     { transform: translateX(-8px); }
+      60%     { transform: translateX(8px); }
+    }
+
+    /* ── SCREENS ── */
+    .screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, #1a0944 0%, #0d0d2b 100%);
+      z-index: 100;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .screen.hidden { display: none; }
+
+    .screen h1 {
+      font-size: clamp(32px, 8vw, 64px);
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 0 20px #aa44ff, 0 0 40px #aa44ff;
+      margin-bottom: 8px;
+    }
+
+    .screen .subtitle {
+      font-size: clamp(14px, 3.5vw, 20px);
+      color: #c899ff;
+      margin-bottom: 28px;
+    }
+
+    .tabelGrid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .tabelBtn {
+      background: linear-gradient(145deg, #ff6600, #cc4400);
+      border: 3px solid #ff9933;
+      border-radius: 14px;
+      color: #fff;
+      font-size: clamp(20px, 5vw, 28px);
+      font-weight: 900;
+      padding: 14px 8px;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+    }
+
+    .tabelBtn:active { transform: scale(0.94); }
+    .tabelBtn:hover  { box-shadow: 0 0 18px #ff9933; }
+
+    .tabelBtn .highscore-badge {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background: #ffdd00;
+      color: #333;
+      font-size: 11px;
+      font-weight: 900;
+      border-radius: 10px;
+      padding: 2px 6px;
+      min-width: 24px;
+    }
+
+    .bigBtn {
+      background: linear-gradient(145deg, #8833ff, #5511cc);
+      border: 3px solid #cc88ff;
+      border-radius: 20px;
+      color: #fff;
+      font-size: clamp(18px, 4vw, 24px);
+      font-weight: 900;
+      padding: 16px 36px;
+      cursor: pointer;
+      margin: 6px;
+      transition: transform 0.1s, box-shadow 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bigBtn:active { transform: scale(0.95); }
+    .bigBtn:hover  { box-shadow: 0 0 20px #aa55ff; }
+    .bigBtn.orange {
+      background: linear-gradient(145deg, #ff6600, #cc4400);
+      border-color: #ff9933;
+    }
+    .bigBtn.orange:hover { box-shadow: 0 0 20px #ff9933; }
+
+    /* End screen specific */
+    #endScore {
+      font-size: clamp(48px, 12vw, 96px);
+      font-weight: 900;
+      color: #ffdd00;
+      text-shadow: 0 0 24px #ff9900;
+      margin: 8px 0;
+    }
+
+    #endMsg {
+      font-size: clamp(16px, 4vw, 22px);
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    #nextSuggestion {
+      font-size: clamp(13px, 3vw, 17px);
+      color: #ffdd88;
+      background: rgba(255,153,0,0.18);
+      border: 2px solid #ff9933;
+      border-radius: 12px;
+      padding: 10px 18px;
+      margin: 10px 0 20px 0;
+      max-width: 380px;
+    }
+
+    #newRecordBadge {
+      font-size: clamp(18px, 4.5vw, 26px);
+      font-weight: 900;
+      color: #ffdd00;
+      background: rgba(255,200,0,0.15);
+      border: 2px solid #ffdd00;
+      border-radius: 12px;
+      padding: 8px 20px;
+      margin-bottom: 10px;
+    }
+
+    /* Flash overlay */
+    #flashOverlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 200;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    /* Stars */
+    #starCanvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #gameContainer { position: relative; z-index: 1; }
+  </style>
+</head>
+<body>
+
+<canvas id="starCanvas"></canvas>
+<div id="flashOverlay"></div>
+
+<!-- START SCREEN -->
+<div id="startScreen" class="screen">
+  <h1>🚂 Tafeltrein</h1>
+  <p class="subtitle">Kies welke tafel je wilt oefenen!</p>
+  <div class="tabelGrid" id="tabelGrid"></div>
+  <p style="color:#8877aa; font-size:13px;">Gele badge = je highscore (%)</p>
+</div>
+
+<!-- END SCREEN -->
+<div id="endScreen" class="screen hidden">
+  <h1 id="endTitle">Klaar!</h1>
+  <div id="endScore">0%</div>
+  <div id="newRecordBadge" style="display:none">⭐ Nieuw record!</div>
+  <div id="endMsg"></div>
+  <div id="nextSuggestion" style="display:none"></div>
+  <div style="display:flex; flex-wrap:wrap; justify-content:center;">
+    <button class="bigBtn orange" onclick="restartSameTable()">Nog een keer</button>
+    <button class="bigBtn" onclick="goToStart()">Andere tafel</button>
+  </div>
+</div>
+
+<!-- GAME UI -->
+<div id="gameContainer">
+  <div id="hud">
+    <div class="hud-block">
+      <span class="hud-label">Tafel</span>
+      <span class="hud-value orange" id="hudTable">×?</span>
+    </div>
+    <div class="hud-block">
+      <span class="hud-label">Score</span>
+      <span class="hud-value green" id="hudScore">0</span>
+    </div>
+    <div class="hud-block">
+      <span class="hud-label">Goed</span>
+      <span class="hud-value" id="hudCorrect">0/0</span>
+    </div>
+    <div class="hud-block">
+      <span class="hud-label">Highscore</span>
+      <span class="hud-value orange" id="hudHigh">–</span>
+    </div>
+  </div>
+  <div id="progressBar"><div id="progressFill" style="width:0%"></div></div>
+  <canvas id="gameCanvas" width="800" height="260"></canvas>
+  <div id="answerArea">
+    <button class="answerBtn" id="btn0" onclick="checkAnswer(0)"></button>
+    <button class="answerBtn" id="btn1" onclick="checkAnswer(1)"></button>
+    <button class="answerBtn" id="btn2" onclick="checkAnswer(2)"></button>
+    <button class="answerBtn" id="btn3" onclick="checkAnswer(3)"></button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  STAR BACKGROUND
+// ═══════════════════════════════════════════════
+(function initStars() {
+  const sc = document.getElementById('starCanvas');
+  const sx = sc.getContext('2d');
+  sc.width  = window.innerWidth;
+  sc.height = window.innerHeight;
+
+  const stars = Array.from({length: 140}, () => ({
+    x: Math.random() * sc.width,
+    y: Math.random() * sc.height * 0.7,
+    r: Math.random() * 1.8 + 0.3,
+    a: Math.random(),
+    speed: Math.random() * 0.008 + 0.003
+  }));
+
+  function drawStars() {
+    sx.clearRect(0, 0, sc.width, sc.height);
+    // Moon
+    const mx = sc.width * 0.85, my = sc.height * 0.12, mr = 38;
+    const moonGrad = sx.createRadialGradient(mx-8, my-8, 4, mx, my, mr);
+    moonGrad.addColorStop(0,   '#fffde0');
+    moonGrad.addColorStop(0.7, '#ffe08a');
+    moonGrad.addColorStop(1,   'rgba(255,200,80,0)');
+    sx.beginPath();
+    sx.arc(mx, my, mr, 0, Math.PI*2);
+    sx.fillStyle = moonGrad;
+    sx.fill();
+    // Crescent shadow
+    sx.beginPath();
+    sx.arc(mx+14, my-8, mr*0.82, 0, Math.PI*2);
+    sx.fillStyle = '#0d0d2b';
+    sx.fill();
+
+    stars.forEach(s => {
+      s.a += s.speed;
+      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(s.a));
+      sx.beginPath();
+      sx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      sx.fillStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+      sx.fill();
+    });
+    requestAnimationFrame(drawStars);
+  }
+  drawStars();
+
+  window.addEventListener('resize', () => {
+    sc.width  = window.innerWidth;
+    sc.height = window.innerHeight;
+  });
+})();
+
+// ═══════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════
+const TOTAL_QUESTIONS = 10;
+const BASE_SPEED      = 55;   // px per second
+const FAST_SPEED      = 110;
+const SLOW_SPEED      = 28;
+const FAST_DURATION   = 900;  // ms
+const SLOW_DURATION   = 700;
+
+let currentTable = 2;
+let score        = 0;
+let correctCount = 0;
+let questionNum  = 0;
+let answers      = [];
+let correctIndex = 0;
+let answered     = false;
+let gameActive   = false;
+
+let trainX       = 820;   // leading edge (right side, starts off-screen right)
+let trainSpeed   = BASE_SPEED;
+let speedTimer   = 0;
+let isSpeedMode  = 'normal'; // 'fast' | 'slow' | 'normal'
+
+let currentA     = 1;
+let currentB     = 1;
+
+let lastTime     = null;
+let animFrameId  = null;
+
+// Timer bar
+let timeLeft     = 8.0;
+const TIME_LIMIT = 8.0;
+
+// Canvas
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+
+// Wagon colors
+const WAGON_COLORS  = ['#e63939','#e69039','#d4c222','#39b83a','#3998d4','#8c39d4','#d439b0'];
+const WAGON_BORDER  = ['#ff6666','#ffbb66','#ffe066','#66dd66','#66bbff','#bb66ff','#ff66dd'];
+
+// ═══════════════════════════════════════════════
+//  LOCAL STORAGE
+// ═══════════════════════════════════════════════
+function getHighScore(t) {
+  return parseInt(localStorage.getItem('tafeltrein_hs_' + t) || '0', 10);
+}
+function setHighScore(t, pct) {
+  const prev = getHighScore(t);
+  if (pct > prev) {
+    localStorage.setItem('tafeltrein_hs_' + t, pct);
+    return true; // new record
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════
+//  START SCREEN
+// ═══════════════════════════════════════════════
+function buildStartScreen() {
+  const grid = document.getElementById('tabelGrid');
+  grid.innerHTML = '';
+  for (let t = 2; t <= 10; t++) {
+    const btn = document.createElement('button');
+    btn.className = 'tabelBtn';
+    btn.textContent = '× ' + t;
+    const hs = getHighScore(t);
+    if (hs > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'highscore-badge';
+      badge.textContent = hs + '%';
+      btn.appendChild(badge);
+    }
+    btn.onclick = (function(n) { return function() { startGame(n); }; })(t);
+    grid.appendChild(btn);
+  }
+}
+
+function showStartScreen() {
+  buildStartScreen();
+  document.getElementById('startScreen').classList.remove('hidden');
+  document.getElementById('endScreen').classList.add('hidden');
+  gameActive = false;
+  if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+}
+
+function goToStart() { showStartScreen(); }
+
+// ═══════════════════════════════════════════════
+//  GAME START / RESTART
+// ═══════════════════════════════════════════════
+function startGame(tableNum) {
+  currentTable = tableNum;
+  score        = 0;
+  correctCount = 0;
+  questionNum  = 0;
+  gameActive   = true;
+  answered     = false;
+  trainX       = canvas.width + 60;
+  trainSpeed   = BASE_SPEED;
+  isSpeedMode  = 'normal';
+  speedTimer   = 0;
+  lastTime     = null;
+
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('endScreen').classList.add('hidden');
+
+  updateHUD();
+  newQuestion();
+
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  animFrameId = requestAnimationFrame(gameLoop);
+}
+
+function restartSameTable() {
+  startGame(currentTable);
+}
+
+// ═══════════════════════════════════════════════
+//  QUESTION GENERATION
+// ═══════════════════════════════════════════════
+function newQuestion() {
+  if (questionNum >= TOTAL_QUESTIONS) {
+    endGame();
+    return;
+  }
+
+  answered    = false;
+  timeLeft    = TIME_LIMIT;
+
+  // Pick a×b where a = currentTable, b = 1..10
+  currentA = currentTable;
+  currentB = Math.floor(Math.random() * 10) + 1;
+  const correct = currentA * currentB;
+
+  // Generate 4 unique answer options
+  const opts = new Set([correct]);
+  while (opts.size < 4) {
+    // Nearby wrong answers
+    const delta = Math.floor(Math.random() * 20) - 10;
+    const wrong = correct + delta;
+    if (wrong > 0 && wrong !== correct) opts.add(wrong);
+  }
+  answers = shuffleArray([...opts]);
+  correctIndex = answers.indexOf(correct);
+
+  // Update buttons
+  for (let i = 0; i < 4; i++) {
+    const btn = document.getElementById('btn' + i);
+    btn.textContent = answers[i];
+    btn.className   = 'answerBtn';
+    btn.disabled    = false;
+  }
+
+  updateHUD();
+}
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// ═══════════════════════════════════════════════
+//  ANSWER CHECKING
+// ═══════════════════════════════════════════════
+function checkAnswer(btnIndex) {
+  if (answered || !gameActive) return;
+  answered = true;
+
+  const btn = document.getElementById('btn' + btnIndex);
+
+  if (btnIndex === correctIndex) {
+    // Correct
+    correctCount++;
+    score += 10 + Math.round(timeLeft * 2); // bonus for speed
+    btn.classList.add('correct');
+    triggerFlash('rgba(68,221,136,0.25)');
+    setSpeedMode('fast');
+    playToot();
+  } else {
+    // Wrong — show correct
+    btn.classList.add('wrong');
+    document.getElementById('btn' + correctIndex).classList.add('correct');
+    triggerFlash('rgba(255,68,68,0.3)');
+    setSpeedMode('slow');
+    playBuzz();
+  }
+
+  questionNum++;
+  updateHUD();
+
+  // Disable all buttons briefly, then load next question
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('btn' + i).disabled = true;
+  }
+
+  setTimeout(() => {
+    if (questionNum >= TOTAL_QUESTIONS) {
+      endGame();
+    } else {
+      newQuestion();
+    }
+  }, 900);
+}
+
+// ═══════════════════════════════════════════════
+//  SPEED MODES
+// ═══════════════════════════════════════════════
+function setSpeedMode(mode) {
+  isSpeedMode = mode;
+  speedTimer  = mode === 'fast' ? FAST_DURATION : SLOW_DURATION;
+  trainSpeed  = mode === 'fast' ? FAST_SPEED : SLOW_SPEED;
+}
+
+// ═══════════════════════════════════════════════
+//  FLASH OVERLAY
+// ═══════════════════════════════════════════════
+function triggerFlash(color) {
+  const ov = document.getElementById('flashOverlay');
+  ov.style.background = color;
+  ov.style.opacity    = '1';
+  setTimeout(() => { ov.style.opacity = '0'; }, 180);
+}
+
+// ═══════════════════════════════════════════════
+//  SIMPLE AUDIO (Web Audio API)
+// ═══════════════════════════════════════════════
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, dur, type, vol) {
+  try {
+    const ac  = getAudioCtx();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type      = type || 'square';
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    gain.gain.setValueAtTime(vol || 0.18, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + dur);
+  } catch(e) {}
+}
+
+function playToot() {
+  // Train toot: two ascending notes
+  playTone(440, 0.12, 'square', 0.2);
+  setTimeout(() => playTone(660, 0.18, 'square', 0.2), 120);
+  setTimeout(() => playTone(880, 0.22, 'square', 0.18), 260);
+}
+
+function playBuzz() {
+  playTone(180, 0.25, 'sawtooth', 0.15);
+  setTimeout(() => playTone(130, 0.2, 'sawtooth', 0.12), 200);
+}
+
+// ═══════════════════════════════════════════════
+//  HUD UPDATE
+// ═══════════════════════════════════════════════
+function updateHUD() {
+  document.getElementById('hudTable').textContent   = '×' + currentTable;
+  document.getElementById('hudScore').textContent   = score;
+  document.getElementById('hudCorrect').textContent = correctCount + '/' + questionNum;
+  const hs = getHighScore(currentTable);
+  document.getElementById('hudHigh').textContent    = hs > 0 ? hs + '%' : '–';
+  // Progress
+  const pct = (questionNum / TOTAL_QUESTIONS) * 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+// ═══════════════════════════════════════════════
+//  END GAME
+// ═══════════════════════════════════════════════
+function endGame() {
+  gameActive = false;
+  if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+
+  const pct     = Math.round((correctCount / TOTAL_QUESTIONS) * 100);
+  const isRecord = setHighScore(currentTable, pct);
+
+  document.getElementById('endScore').textContent = pct + '%';
+
+  let title = 'Klaar!';
+  let msg   = '';
+  if      (pct === 100) { title = '🌟 Perfect!';       msg = 'Alle sommen goed! Geweldig!'; }
+  else if (pct >= 80)   { title = '🎉 Top gedaan!';    msg = correctCount + ' van ' + TOTAL_QUESTIONS + ' goed. Super!'; }
+  else if (pct >= 60)   { title = '👍 Goed bezig!';    msg = correctCount + ' van ' + TOTAL_QUESTIONS + ' goed. Blijf oefenen!'; }
+  else                  { title = '🚂 Oefenen maar!';  msg = correctCount + ' van ' + TOTAL_QUESTIONS + ' goed. Je kunt het!'; }
+
+  document.getElementById('endTitle').textContent = title;
+  document.getElementById('endMsg').textContent   = msg;
+
+  const badge = document.getElementById('newRecordBadge');
+  badge.style.display = isRecord ? 'block' : 'none';
+
+  // Suggest next table if >80%
+  const suggestion = document.getElementById('nextSuggestion');
+  if (pct >= 80 && currentTable < 10) {
+    suggestion.style.display = 'block';
+    suggestion.textContent   = '🚀 Goed zo! Probeer ook de tafel van ' + (currentTable + 1) + '!';
+  } else if (pct >= 80 && currentTable === 10) {
+    suggestion.style.display = 'block';
+    suggestion.textContent   = '🏆 Je bent een rekenkampioen! Alle tafels op 80%+!';
+  } else {
+    suggestion.style.display = 'none';
+  }
+
+  document.getElementById('endScreen').classList.remove('hidden');
+}
+
+// ═══════════════════════════════════════════════
+//  DRAW TRAIN
+// ═══════════════════════════════════════════════
+function drawTrain(x) {
+  // x = right edge of locomotive
+  // Train moves right→left, so locomotive is leftmost, wagons trail right
+
+  const lw = 110, lh = 60;   // locomotive width, height
+  const ww =  88, wh = 52;   // wagon width, height
+  const gap =  8;
+  const groundY = canvas.height - 48;
+  const wheelR  = 12;
+  const WAGONS  = 3;
+
+  // Helper: rounded rect
+  function rrect(cx, cy, w, h, r, fill, stroke, lw2) {
+    ctx.beginPath();
+    ctx.moveTo(cx + r, cy);
+    ctx.lineTo(cx + w - r, cy);
+    ctx.arcTo(cx + w, cy, cx + w, cy + r, r);
+    ctx.lineTo(cx + w, cy + h - r);
+    ctx.arcTo(cx + w, cy + h, cx + w - r, cy + h, r);
+    ctx.lineTo(cx + r, cy + h);
+    ctx.arcTo(cx, cy + h, cx, cy + h - r, r);
+    ctx.lineTo(cx, cy + r);
+    ctx.arcTo(cx, cy, cx + r, cy, r);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth   = lw2 || 3;
+      ctx.stroke();
+    }
+  }
+
+  // Draw wheels
+  function wheels(cx, cy, count) {
+    for (let i = 0; i < count; i++) {
+      const wx = cx + 20 + i * 36;
+      // Axle
+      ctx.beginPath();
+      ctx.moveTo(wx, cy);
+      ctx.lineTo(wx, cy + wheelR);
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Wheel
+      ctx.beginPath();
+      ctx.arc(wx, cy + wheelR, wheelR, 0, Math.PI * 2);
+      ctx.fillStyle = '#222';
+      ctx.fill();
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Hub
+      ctx.beginPath();
+      ctx.arc(wx, cy + wheelR, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#bbb';
+      ctx.fill();
+    }
+  }
+
+  // Rails at ground
+  ctx.fillStyle = '#5a4a2a';
+  ctx.fillRect(0, groundY + 20, canvas.width, 6);
+  ctx.fillRect(0, groundY + 30, canvas.width, 6);
+  // Rail ties
+  for (let tx = 0; tx < canvas.width; tx += 28) {
+    ctx.fillStyle = '#3e2e10';
+    ctx.fillRect(tx, groundY + 18, 18, 20);
+  }
+
+  // Locomotive position: right edge = x
+  const lx = x - lw;
+  const ly = groundY - lh - wheelR * 2;
+
+  // Wagons (drawn right-to-left behind loco)
+  for (let wi = 0; wi < WAGONS; wi++) {
+    const wStartX = lx + lw + gap + wi * (ww + gap);
+    const wy      = groundY - wh - wheelR * 2;
+    const col     = WAGON_COLORS[wi % WAGON_COLORS.length];
+    const bord    = WAGON_BORDER[wi % WAGON_BORDER.length];
+
+    rrect(wStartX, wy, ww, wh, 8, col, bord, 3);
+
+    // Window
+    ctx.fillStyle = 'rgba(255,255,200,0.35)';
+    ctx.fillRect(wStartX + 12, wy + 10, 26, 20);
+    ctx.fillStyle = 'rgba(255,255,200,0.12)';
+    ctx.fillRect(wStartX + 46, wy + 10, 26, 20);
+    ctx.strokeStyle = '#fff3';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(wStartX + 12, wy + 10, 26, 20);
+    ctx.strokeRect(wStartX + 46, wy + 10, 26, 20);
+
+    // Connector left
+    ctx.fillStyle = '#888';
+    ctx.fillRect(wStartX - 6, wy + wh - 8, 8, 6);
+    // Connector right
+    ctx.fillStyle = '#888';
+    ctx.fillRect(wStartX + ww - 2, wy + wh - 8, 8, 6);
+
+    wheels(wStartX, wy + wh, 2);
+
+    // Question text on wagon 0 (first wagon behind loco)
+    if (wi === 0) {
+      const somText = currentA + ' × ' + currentB + ' = ?';
+      ctx.save();
+      ctx.font = 'bold 18px "Segoe UI", Arial, sans-serif';
+      ctx.textAlign  = 'center';
+      ctx.textBaseline = 'middle';
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(somText, wStartX + ww/2 + 1, wy + wh/2 + 1);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(somText, wStartX + ww/2, wy + wh/2);
+      ctx.restore();
+    }
+  }
+
+  // LOCOMOTIVE
+  rrect(lx, ly, lw, lh, 10, '#cc3300', '#ff5522', 4);
+
+  // Cab section (rear/right of loco)
+  ctx.fillStyle = '#aa2200';
+  ctx.fillRect(lx + lw - 30, ly, 30, lh);
+  ctx.strokeStyle = '#ff5522';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(lx + lw - 30, ly, 30, lh);
+
+  // Cab window
+  rrect(lx + lw - 26, ly + 8, 22, 20, 4, 'rgba(200,240,255,0.5)', '#88ddff', 2);
+
+  // Boiler accent stripe
+  ctx.fillStyle = '#ff8844';
+  ctx.fillRect(lx + 8, ly + 22, lw - 38, 10);
+
+  // Headlight
+  const hlGrad = ctx.createRadialGradient(lx + 10, ly + lh/2, 2, lx + 10, ly + lh/2, 14);
+  hlGrad.addColorStop(0, 'rgba(255,255,180,0.9)');
+  hlGrad.addColorStop(1, 'rgba(255,255,100,0)');
+  ctx.fillStyle = hlGrad;
+  ctx.beginPath();
+  ctx.arc(lx + 10, ly + lh/2, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(lx + 10, ly + lh/2, 7, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffcc';
+  ctx.fill();
+
+  // Chimney (smoke stack)
+  ctx.fillStyle = '#882200';
+  ctx.fillRect(lx + 18, ly - 16, 14, 16);
+  ctx.beginPath();
+  ctx.arc(lx + 25, ly - 16, 10, 0, Math.PI * 2);
+  ctx.fillStyle = '#993300';
+  ctx.fill();
+
+  // Smoke particles (stored separately, drawn here)
+  drawSmoke(lx + 25, ly - 26);
+
+  // Loco number plate
+  ctx.fillStyle = '#ffdd00';
+  rrect(lx + 32, ly + 16, 36, 22, 4, '#ffdd00', '#cc8800', 2);
+  ctx.fillStyle = '#333';
+  ctx.font = 'bold 15px "Segoe UI", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('T×' + currentTable, lx + 50, ly + 27);
+
+  wheels(lx, ly + lh, 3);
+
+  // Coupling connector on right of loco
+  ctx.fillStyle = '#888';
+  ctx.fillRect(lx + lw, ly + lh - 8, 8, 6);
+}
+
+// ═══════════════════════════════════════════════
+//  SMOKE PARTICLES
+// ═══════════════════════════════════════════════
+const smokeParticles = [];
+let   smokeTimer = 0;
+
+function spawnSmoke(x, y) {
+  smokeParticles.push({
+    x, y,
+    vx: (Math.random() - 0.6) * 0.6,
+    vy: -(Math.random() * 1.2 + 0.6),
+    r:   Math.random() * 6 + 4,
+    a:   0.55,
+    life: 0
+  });
+}
+
+function drawSmoke(originX, originY) {
+  smokeParticles.forEach((p, i) => {
+    p.x   += p.vx;
+    p.y   += p.vy;
+    p.a   -= 0.013;
+    p.r   += 0.3;
+    p.life++;
+    if (p.a <= 0 || p.life > 60) {
+      smokeParticles.splice(i, 1);
+      return;
+    }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,190,200,${p.a.toFixed(2)})`;
+    ctx.fill();
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  STATION
+// ═══════════════════════════════════════════════
+function drawStation() {
+  const sx = 0, sy = canvas.height - 130, sw = 90, sh = 82;
+
+  // Platform
+  ctx.fillStyle = '#aaa897';
+  ctx.fillRect(0, canvas.height - 50, 100, 30);
+  ctx.fillStyle = '#888770';
+  ctx.fillRect(0, canvas.height - 54, 100, 6);
+
+  // Building
+  ctx.fillStyle = '#d4c07a';
+  ctx.fillRect(sx, sy, sw, sh);
+  ctx.strokeStyle = '#a89050';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sx, sy, sw, sh);
+
+  // Roof (triangle)
+  ctx.beginPath();
+  ctx.moveTo(sx - 5, sy + 2);
+  ctx.lineTo(sx + sw/2, sy - 30);
+  ctx.lineTo(sx + sw + 5, sy + 2);
+  ctx.closePath();
+  ctx.fillStyle = '#c0392b';
+  ctx.fill();
+  ctx.strokeStyle = '#8b2317';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Door
+  ctx.fillStyle = '#7a5230';
+  ctx.beginPath();
+  ctx.rect(sx + 32, sy + sh - 34, 26, 34);
+  ctx.fill();
+  ctx.strokeStyle = '#5a3210';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Door arc top
+  ctx.beginPath();
+  ctx.arc(sx + 45, sy + sh - 34, 13, Math.PI, 0);
+  ctx.fillStyle = '#7a5230';
+  ctx.fill();
+  ctx.strokeStyle = '#5a3210';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Windows
+  ctx.fillStyle = 'rgba(200,240,255,0.6)';
+  ctx.fillRect(sx + 8,  sy + 14, 20, 18);
+  ctx.fillRect(sx + sw - 28, sy + 14, 20, 18);
+  ctx.strokeStyle = '#aaddff';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx + 8,  sy + 14, 20, 18);
+  ctx.strokeRect(sx + sw - 28, sy + 14, 20, 18);
+
+  // Sign
+  ctx.fillStyle = '#ff6600';
+  ctx.fillRect(sx + 12, sy + 40, 66, 20);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px "Segoe UI", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('STATION', sx + 45, sy + 50);
+
+  // Lamp post
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(sx + 78, sy + sh);
+  ctx.lineTo(sx + 78, sy - 10);
+  ctx.lineTo(sx + 92, sy - 10);
+  ctx.stroke();
+  // Lamp
+  const lampGlow = ctx.createRadialGradient(sx + 92, sy - 14, 2, sx + 92, sy - 14, 12);
+  lampGlow.addColorStop(0, 'rgba(255,255,150,0.9)');
+  lampGlow.addColorStop(1, 'rgba(255,255,0,0)');
+  ctx.beginPath();
+  ctx.arc(sx + 92, sy - 14, 12, 0, Math.PI * 2);
+  ctx.fillStyle = lampGlow;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(sx + 92, sy - 14, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffaa';
+  ctx.fill();
+}
+
+// ═══════════════════════════════════════════════
+//  TIMER BAR (on canvas)
+// ═══════════════════════════════════════════════
+function drawTimerBar() {
+  if (!gameActive || answered) return;
+  const bw = canvas.width - 40, bh = 10, bx = 20, by = 12;
+  const frac = Math.max(0, timeLeft / TIME_LIMIT);
+
+  // Background
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 5);
+  ctx.fill();
+
+  // Fill
+  const color = frac > 0.5 ? '#44dd88'
+              : frac > 0.25 ? '#ffcc00'
+              : '#ff4444';
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw * frac, bh, 5);
+  ctx.fill();
+
+  // Label
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px "Segoe UI", Arial';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(Math.ceil(timeLeft) + 's', bx + bw, by);
+}
+
+// ═══════════════════════════════════════════════
+//  MAIN GAME LOOP
+// ═══════════════════════════════════════════════
+function gameLoop(timestamp) {
+  if (!gameActive) return;
+
+  const dt = lastTime ? Math.min((timestamp - lastTime) / 1000, 0.1) : 0.016;
+  lastTime = timestamp;
+
+  // Speed timer
+  if (isSpeedMode !== 'normal') {
+    speedTimer -= dt * 1000;
+    if (speedTimer <= 0) {
+      isSpeedMode  = 'normal';
+      trainSpeed   = BASE_SPEED;
+    }
+  }
+
+  // Move train
+  trainX -= trainSpeed * dt;
+
+  // Smoke
+  smokeTimer += dt;
+  if (smokeTimer > 0.12) {
+    smokeTimer = 0;
+    // Approximate chimney position
+    const chimneyX = trainX - 80; // rough
+    spawnSmoke(chimneyX, canvas.height - 48 - 60 - 24 - 26);
+  }
+
+  // Timer countdown
+  if (!answered) {
+    timeLeft -= dt;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      // Auto-wrong: time expired
+      answered = true;
+      // Flash correct answer
+      document.getElementById('btn' + correctIndex).classList.add('correct');
+      triggerFlash('rgba(255,68,68,0.25)');
+      setSpeedMode('slow');
+      playBuzz();
+      questionNum++;
+      updateHUD();
+      for (let i = 0; i < 4; i++) document.getElementById('btn' + i).disabled = true;
+      setTimeout(() => {
+        if (questionNum >= TOTAL_QUESTIONS) endGame();
+        else newQuestion();
+      }, 1000);
+    }
+  }
+
+  // Wrap train: when fully off-screen left, reset to right
+  const totalTrainWidth = 110 + 3 * (88 + 8) + 20;
+  if (trainX < -totalTrainWidth) {
+    trainX = canvas.width + 60;
+  }
+
+  // Draw
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  skyGrad.addColorStop(0,   '#0d0d2b');
+  skyGrad.addColorStop(0.7, '#1a0a35');
+  skyGrad.addColorStop(1,   '#2d1b4e');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawStation();
+  drawTrain(trainX);
+  drawTimerBar();
+
+  animFrameId = requestAnimationFrame(gameLoop);
+}
+
+// ═══════════════════════════════════════════════
+//  KEYBOARD SUPPORT (1–4)
+// ═══════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  const map = { '1': 0, '2': 1, '3': 2, '4': 3 };
+  if (map[e.key] !== undefined && gameActive && !answered) {
+    checkAnswer(map[e.key]);
+  }
+});
+
+// ═══════════════════════════════════════════════
+//  CANVAS RESIZE
+// ═══════════════════════════════════════════════
+function resizeCanvas() {
+  const container = document.getElementById('gameContainer');
+  const w = Math.min(container.offsetWidth, 800);
+  const ratio = 260 / 800;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = (w * ratio) + 'px';
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ═══════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════
+showStartScreen();
+</script>
+</body>
+</html>
