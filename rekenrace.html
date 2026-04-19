@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rekenrace</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+  }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ── Constanten ─────────────────────────────────────────────
+const TRACK_LEFT   = 20;
+const TRACK_RIGHT  = 370;
+const TRACK_WIDTH  = TRACK_RIGHT - TRACK_LEFT;
+const FINISH_X     = TRACK_RIGHT - 10;
+const START_X      = TRACK_LEFT + 10;
+
+const PLAYER_LANE_Y  = 200;
+const CPU_LANE_Y     = 290;
+
+const TOTAL_SOMMEN  = 10;
+const CPU_SPEED      = 0.008;   // per ms → fraction of track
+const PLAYER_BOOST   = 0.12;    // fraction boost per goed antwoord
+
+// ── State ──────────────────────────────────────────────────
+const G = {
+  screen: 'start',  // start | race | finish
+  playerPos: 0,     // 0..1 fraction
+  cpuPos: 0,
+  somIndex: 0,
+  sommen: [],
+  input: '',
+  feedback: null,   // null | 'goed' | 'fout'
+  feedbackTimer: 0,
+  winner: null,
+  lastTs: null,
+  buttons: [],
+  carAnim: 0,       // wielen animatie
+  smoke: [],
+  stars: []
+};
+
+// ── Sommen genereren ───────────────────────────────────────
+function generateSommen() {
+  const list = [];
+  for (let i = 0; i < TOTAL_SOMMEN; i++) {
+    if (i < 5) {
+      // Optellen 1-9
+      const a = Math.floor(Math.random() * 5) + 1;
+      const b = Math.floor(Math.random() * 5) + 1;
+      list.push({ a, b, op: '+', ans: a + b });
+    } else {
+      // Aftrekken
+      const ans = Math.floor(Math.random() * 5) + 1;
+      const a = ans + Math.floor(Math.random() * 4) + 1;
+      list.push({ a, b: a - ans, op: '-', ans });
+    }
+  }
+  // Shuffle licht
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+// ── Tekenhulpen ────────────────────────────────────────────
+function rr(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+
+// ── Achtergrond ────────────────────────────────────────────
+function drawBG() {
+  // Lucht
+  const sky = ctx.createLinearGradient(0, 0, 0, 160);
+  sky.addColorStop(0, '#87ceeb');
+  sky.addColorStop(1, '#e0f7fa');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 390, 160);
+
+  // Wolken
+  drawCloud(60, 50, 1);
+  drawCloud(240, 30, 0.8);
+  drawCloud(330, 70, 0.6);
+
+  // Wegdek achtergrond
+  ctx.fillStyle = '#4e342e';
+  ctx.fillRect(0, 160, 390, 360);
+
+  // Gras zijkanten
+  ctx.fillStyle = '#388e3c';
+  ctx.fillRect(0, 155, 390, 15);
+  ctx.fillRect(0, 515, 390, 15);
+
+  // Asfalt
+  ctx.fillStyle = '#546e7a';
+  ctx.fillRect(0, 170, 390, 340);
+
+  // Witte baan-strepen
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([30, 20]);
+  ctx.beginPath();
+  ctx.moveTo(0, 252);
+  ctx.lineTo(390, 252);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Finish lijn
+  drawFinish();
+}
+
+function drawCloud(x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 25, 0, Math.PI * 2);
+  ctx.arc(30, -5, 20, 0, Math.PI * 2);
+  ctx.arc(55, 0, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFinish() {
+  const fx = TRACK_LEFT + FINISH_X * 1;
+  // Finishlijn checkered
+  const squareSize = 8;
+  const lineX = TRACK_RIGHT - 5;
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 2; col++) {
+      const isBlack = (row + col) % 2 === 0;
+      ctx.fillStyle = isBlack ? '#000' : '#fff';
+      ctx.fillRect(lineX + col * squareSize, 170 + row * squareSize * 2, squareSize, squareSize * 2);
+    }
+  }
+  // Vlag
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(lineX + 16, 110, 3, 60);
+  ctx.fillStyle = '#000';
+  // checkered vlag
+  for (let ry = 0; ry < 4; ry++) {
+    for (let rx = 0; rx < 4; rx++) {
+      if ((ry + rx) % 2 === 0) ctx.fillStyle = '#000';
+      else ctx.fillStyle = '#fff';
+      ctx.fillRect(lineX + 19 + rx * 8, 110 + ry * 8, 8, 8);
+    }
+  }
+}
+
+// ── Auto tekenen ───────────────────────────────────────────
+function drawCar(fracPos, laneY, color, wheelAnim) {
+  const carW = 70, carH = 32;
+  const x = TRACK_LEFT + fracPos * (TRACK_WIDTH - carW);
+  const y = laneY - carH / 2;
+
+  ctx.save();
+
+  // Schaduw
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(x + carW/2, y + carH + 4, carW*0.45, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Carrosserie onderkant
+  rr(x, y + 10, carW, carH - 10, 6, color, null);
+
+  // Dak (cabine)
+  rr(x + 12, y, carW - 28, 20, 5, color, null);
+
+  // Ramen
+  rr(x + 15, y + 3, 14, 12, 3, '#b3e5fc', null);
+  rr(x + 32, y + 3, 14, 12, 3, '#b3e5fc', null);
+
+  // Highlights
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  rr(x + 3, y + 14, carW - 6, 5, 2, 'rgba(255,255,255,0.25)', null);
+
+  // Lichten voor
+  ctx.fillStyle = '#fff59d';
+  ctx.beginPath();
+  ctx.ellipse(x + carW - 5, y + 22, 4, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Lichten achter
+  ctx.fillStyle = '#ef5350';
+  ctx.beginPath();
+  ctx.ellipse(x + 5, y + 22, 3, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wielen
+  const wheelY = y + carH - 2;
+  const wheelR = 9;
+  const wheelOffsets = [x + 14, x + carW - 18];
+  wheelOffsets.forEach(function(wx) {
+    // Band
+    ctx.beginPath();
+    ctx.arc(wx, wheelY, wheelR, 0, Math.PI * 2);
+    ctx.fillStyle = '#212121';
+    ctx.fill();
+    // Velg
+    ctx.beginPath();
+    ctx.arc(wx, wheelY, wheelR - 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#bdbdbd';
+    ctx.fill();
+    // Spaak animatie
+    ctx.save();
+    ctx.translate(wx, wheelY);
+    ctx.rotate(wheelAnim);
+    ctx.strokeStyle = '#757575';
+    ctx.lineWidth = 1.5;
+    for (let s = 0; s < 4; s++) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -(wheelR - 3));
+      ctx.stroke();
+      ctx.rotate(Math.PI / 2);
+    }
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+// ── Uitlaatgas ────────────────────────────────────────────
+function addSmoke(x, y) {
+  for (let i = 0; i < 5; i++) {
+    G.smoke.push({
+      x: x + Math.random() * 10 - 5,
+      y: y,
+      r: 4 + Math.random() * 4,
+      a: 0.6,
+      vx: -(1 + Math.random() * 2),
+      vy: -0.5 + Math.random()
+    });
+  }
+}
+
+function updateSmoke(dt) {
+  for (let i = G.smoke.length - 1; i >= 0; i--) {
+    const s = G.smoke[i];
+    s.x += s.vx * dt * 0.03;
+    s.y += s.vy * dt * 0.03;
+    s.r += dt * 0.01;
+    s.a -= dt * 0.001;
+    if (s.a <= 0) G.smoke.splice(i, 1);
+  }
+}
+
+function drawSmoke() {
+  G.smoke.forEach(function(s) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(200,200,200,' + s.a + ')';
+    ctx.fill();
+  });
+}
+
+// ── Sterpunten animatie ───────────────────────────────────
+function addStars(x, y) {
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    G.stars.push({
+      x, y,
+      vx: Math.cos(ang) * (2 + Math.random() * 2),
+      vy: Math.sin(ang) * (2 + Math.random() * 2),
+      life: 1
+    });
+  }
+}
+
+function updateStars(dt) {
+  for (let i = G.stars.length - 1; i >= 0; i--) {
+    const s = G.stars[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.life -= dt * 0.002;
+    if (s.life <= 0) G.stars.splice(i, 1);
+  }
+}
+
+function drawStars() {
+  G.stars.forEach(function(s) {
+    ctx.font = '18px Arial';
+    ctx.globalAlpha = s.life;
+    ctx.textAlign = 'center';
+    ctx.fillText('⭐', s.x, s.y);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ── Numpad ────────────────────────────────────────────────
+const PAD_KEYS = ['7','8','9','4','5','6','1','2','3','⌫','0','✓'];
+const PAD_COLS = 3;
+const PAD_ROWS = 4;
+const PAD_BTN_W = 90;
+const PAD_BTN_H = 65;
+const PAD_GAP = 10;
+const PAD_START_X = (390 - (PAD_COLS * PAD_BTN_W + (PAD_COLS - 1) * PAD_GAP)) / 2;
+const PAD_START_Y = 530;
+
+function drawNumpad() {
+  // Achtergrond numpad
+  rr(10, 520, 370, 170, 16, 'rgba(0,0,0,0.5)', null);
+
+  PAD_KEYS.forEach(function(k, i) {
+    const col = i % PAD_COLS;
+    const row = Math.floor(i / PAD_COLS);
+    const bx = PAD_START_X + col * (PAD_BTN_W + PAD_GAP);
+    const by = PAD_START_Y + row * (PAD_BTN_H + PAD_GAP);
+
+    let bg = '#1565c0';
+    if (k === '⌫') bg = '#c62828';
+    if (k === '✓') bg = '#2e7d32';
+
+    rr(bx, by, PAD_BTN_W, PAD_BTN_H, 12, bg, 'rgba(255,255,255,0.2)', 2);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = k === '⌫' || k === '✓' ? '28px Arial' : 'bold 28px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(k, bx + PAD_BTN_W / 2, by + PAD_BTN_H / 2);
+    ctx.textBaseline = 'alphabetic';
+  });
+}
+
+function getPadButtons() {
+  const btns = [];
+  PAD_KEYS.forEach(function(k, i) {
+    const col = i % PAD_COLS;
+    const row = Math.floor(i / PAD_COLS);
+    const bx = PAD_START_X + col * (PAD_BTN_W + PAD_GAP);
+    const by = PAD_START_Y + row * (PAD_BTN_H + PAD_GAP);
+    btns.push({ x: bx, y: by, w: PAD_BTN_W, h: PAD_BTN_H, key: k });
+  });
+  return btns;
+}
+
+// ── Voortgangsbalk ────────────────────────────────────────
+function drawProgress() {
+  // Auto positie als progress
+  const trackY = 530;
+  rr(20, 510, 350, 14, 7, 'rgba(255,255,255,0.15)', null);
+  // Speler balk
+  rr(20, 510, 350 * G.playerPos, 14, 7, '#f44336', null);
+  // CPU balk
+  ctx.fillStyle = 'rgba(0,200,83,0.6)';
+  ctx.fillRect(20, 510, 350 * G.cpuPos, 7);
+}
+
+// ── HUD ───────────────────────────────────────────────────
+function drawHUD() {
+  if (G.screen !== 'race') return;
+  const som = G.sommen[G.somIndex];
+
+  // Som display
+  rr(10, 360, 370, 70, 14, 'rgba(0,0,0,0.55)', 'rgba(255,255,255,0.2)', 2);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px Arial';
+  ctx.textAlign = 'center';
+  const somStr = som.a + ' ' + som.op + ' ' + som.b + ' = ' + (G.input || '?');
+  ctx.fillText(somStr, 195, 405);
+
+  // Feedback
+  if (G.feedback === 'goed') {
+    ctx.fillStyle = '#69f0ae';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText('Goed! +boost 🚀', 195, 440);
+  } else if (G.feedback === 'fout') {
+    ctx.fillStyle = '#ff5252';
+    ctx.font = 'bold 22px Arial';
+    const correct = som.ans;
+    ctx.fillText('Fout! Het was ' + correct, 195, 440);
+  }
+
+  // Sommennummer
+  ctx.fillStyle = '#ffe082';
+  ctx.font = '18px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText('Som ' + (G.somIndex + 1) + '/' + TOTAL_SOMMEN, 380, 445);
+}
+
+// ── Start scherm ──────────────────────────────────────────
+function drawStart() {
+  // Achtergrond
+  const bg = ctx.createLinearGradient(0, 0, 0, 700);
+  bg.addColorStop(0, '#1a237e');
+  bg.addColorStop(1, '#283593');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 390, 700);
+
+  // Titel
+  rr(20, 60, 350, 100, 20, '#f57f17', '#e65100', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('🏎 Rekenrace!', 195, 120);
+
+  // Auto preview
+  drawCar(0.1, 300, '#f44336', G.carAnim);
+  drawCar(0.5, 380, '#43a047', G.carAnim);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '22px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Los de sommen op!', 195, 460);
+  ctx.font = '18px Arial';
+  ctx.fillStyle = '#b3e5fc';
+  ctx.fillText('Rij jij sneller dan de computer?', 195, 492);
+
+  rr(95, 540, 200, 80, 20, '#4caf50', '#388e3c', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('START! 🚦', 195, 588);
+
+  G.buttons = [{ x: 95, y: 540, w: 200, h: 80, action: 'start' }];
+}
+
+// ── Finish scherm ─────────────────────────────────────────
+function drawFinishScreen() {
+  const bg = ctx.createLinearGradient(0, 0, 0, 700);
+  bg.addColorStop(0, G.winner === 'player' ? '#1b5e20' : '#b71c1c');
+  bg.addColorStop(1, G.winner === 'player' ? '#2e7d32' : '#c62828');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 390, 700);
+
+  ctx.font = '80px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(G.winner === 'player' ? '🏆' : '😢', 195, 180);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px Arial';
+  ctx.fillText(G.winner === 'player' ? 'GEWONNEN!' : 'Verloren...', 195, 260);
+
+  ctx.font = '22px Arial';
+  ctx.fillStyle = '#ffe082';
+  ctx.fillText(G.winner === 'player' ? 'Wat een rekenaar! 🎉' : 'Probeer het nog eens!', 195, 310);
+
+  // Stats
+  rr(40, 350, 310, 90, 16, 'rgba(255,255,255,0.15)', null);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px Arial';
+  ctx.fillText('Jouw score: ' + G.somIndex + '/' + TOTAL_SOMMEN, 195, 395);
+  ctx.font = '18px Arial';
+  ctx.fillStyle = '#b3e5fc';
+  const pct = Math.round((G.playerPos / 1) * 100);
+  ctx.fillText('Afstand afgelegd: ' + Math.min(100, Math.round(G.playerPos * 100)) + '%', 195, 425);
+
+  // Opnieuw knop
+  rr(95, 480, 200, 80, 20, '#1565c0', '#0d47a1', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 26px Arial';
+  ctx.fillText('Opnieuw!', 195, 527);
+
+  G.buttons = [{ x: 95, y: 480, w: 200, h: 80, action: 'restart' }];
+}
+
+// ── Game loop ──────────────────────────────────────────────
+function loop(ts) {
+  if (!G.lastTs) G.lastTs = ts;
+  const dt = ts - G.lastTs;
+  G.lastTs = ts;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  G.carAnim += dt * 0.005;
+
+  if (G.screen === 'start') {
+    drawStart();
+  } else if (G.screen === 'race') {
+    // CPU beweegt constant
+    G.cpuPos = Math.min(1, G.cpuPos + CPU_SPEED * (dt / 16));
+
+    updateSmoke(dt);
+    updateStars(dt);
+
+    if (G.feedback) {
+      G.feedbackTimer -= dt;
+      if (G.feedbackTimer <= 0) G.feedback = null;
+    }
+
+    // Win check
+    if (G.playerPos >= 1) {
+      G.winner = 'player';
+      G.screen = 'finish';
+    } else if (G.cpuPos >= 1) {
+      G.winner = 'cpu';
+      G.screen = 'finish';
+    }
+
+    drawBG();
+    drawSmoke();
+
+    // CPU auto (groen)
+    const cpuCarW = 70;
+    const cpuX = TRACK_LEFT + G.cpuPos * (TRACK_WIDTH - cpuCarW);
+    addSmoke(cpuX, CPU_LANE_Y);
+    drawCar(G.cpuPos, CPU_LANE_Y, '#43a047', G.carAnim * 1.2);
+
+    // Speler auto (rood)
+    const playerCarW = 70;
+    const playerX = TRACK_LEFT + G.playerPos * (TRACK_WIDTH - playerCarW);
+    drawCar(G.playerPos, PLAYER_LANE_Y, '#f44336', G.carAnim);
+
+    drawStars();
+
+    // Labels
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('🔴 JIJ', TRACK_LEFT + 5, PLAYER_LANE_Y - 26);
+    ctx.fillText('🟢 CPU', TRACK_LEFT + 5, CPU_LANE_Y - 26);
+
+    drawHUD();
+    drawNumpad();
+
+    G.buttons = getPadButtons();
+  } else if (G.screen === 'finish') {
+    drawFinishScreen();
+    updateStars(dt);
+    drawStars();
+    if (G.winner === 'player') addStars(195 + Math.random() * 100 - 50, 100 + Math.random() * 50);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ── Input ──────────────────────────────────────────────────
+function handleTap(x, y) {
+  for (let i = 0; i < G.buttons.length; i++) {
+    const b = G.buttons[i];
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+      if (b.action) handleAction(b.action);
+      else if (b.key) handleKey(b.key);
+      return;
+    }
+  }
+}
+
+function handleAction(action) {
+  if (action === 'start') {
+    G.screen = 'race';
+    G.playerPos = 0;
+    G.cpuPos = 0;
+    G.somIndex = 0;
+    G.sommen = generateSommen();
+    G.input = '';
+    G.feedback = null;
+    G.smoke = [];
+    G.stars = [];
+    G.winner = null;
+  } else if (action === 'restart') {
+    G.screen = 'start';
+  }
+}
+
+function handleKey(key) {
+  if (G.screen !== 'race') return;
+  if (G.feedback) return;  // Wacht op feedback cooldown
+  if (G.somIndex >= TOTAL_SOMMEN) return;
+
+  if (key === '⌫') {
+    G.input = G.input.slice(0, -1);
+  } else if (key === '✓') {
+    if (G.input === '') return;
+    const ans = parseInt(G.input, 10);
+    const correct = G.sommen[G.somIndex].ans;
+    const carW = 70;
+
+    if (ans === correct) {
+      G.playerPos = Math.min(1, G.playerPos + PLAYER_BOOST);
+      G.feedback = 'goed';
+      // Voeg sterren toe bij speler positie
+      const px = TRACK_LEFT + G.playerPos * (TRACK_WIDTH - carW) + carW / 2;
+      addStars(px, PLAYER_LANE_Y - 20);
+    } else {
+      G.feedback = 'fout';
+    }
+    G.feedbackTimer = 1200;
+    G.input = '';
+    G.somIndex = Math.min(TOTAL_SOMMEN - 1, G.somIndex + 1);
+
+    if (G.somIndex >= TOTAL_SOMMEN) {
+      // Alle sommen klaar
+    }
+  } else {
+    if (G.input.length < 2) G.input += key;
+  }
+}
+
+canvas.ontouchstart = function(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const touch = e.changedTouches[0];
+  handleTap(
+    (touch.clientX - rect.left) * scaleX,
+    (touch.clientY - rect.top) * scaleY
+  );
+};
+
+canvas.onclick = function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  handleTap(
+    (e.clientX - rect.left) * scaleX,
+    (e.clientY - rect.top) * scaleY
+  );
+};
+
+// ── Start ──────────────────────────────────────────────────
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
