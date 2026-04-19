@@ -1,650 +1,1049 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Cosmic Merge</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-    background:#000;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    min-height:100vh; font-family:Arial,sans-serif; color:#fff;
-    user-select:none; overflow:hidden;
-}
-#title {
-    font-size:17px; letter-spacing:5px; color:#7788aa; margin-bottom:12px;
-    font-weight:300; text-shadow:0 0 20px rgba(100,150,255,0.4);
-}
-#layout { display:flex; gap:16px; align-items:flex-start; }
-#sidebar { width:124px; padding-top:4px; }
-.lbl { font-size:9px; color:#334455; text-transform:uppercase; letter-spacing:2px; margin-bottom:3px; }
-#scoreEl { font-size:34px; font-weight:bold; color:#b8ccff; margin-bottom:2px; text-shadow:0 0 12px rgba(100,150,255,0.3); }
-#hsEl { font-size:10px; color:#334; margin-bottom:12px; }
-#comboEl { font-size:19px; font-weight:bold; min-height:25px; margin-bottom:10px; color:#ffdd88; text-shadow:0 0 14px rgba(255,200,80,0.6); }
-#nextBox {
-    background:rgba(8,12,28,0.9); border:1px solid #1a2540;
-    border-radius:10px; padding:10px; text-align:center; margin-bottom:10px;
-}
-#nextName { font-size:9px; color:#556; margin-top:4px; text-transform:uppercase; letter-spacing:1px; }
-#previewCanvas { display:block; margin:6px auto 0; }
-#goPanel {
-    display:none; background:rgba(4,6,18,0.97); border:1px solid #f85149;
-    border-radius:10px; padding:12px; text-align:center; margin-top:6px;
-}
-#goPanel h2 { color:#f85149; font-size:12px; letter-spacing:2px; margin-bottom:4px; }
-#goScore { font-size:26px; font-weight:bold; color:#b8ccff; margin-bottom:8px; }
-#restartBtn {
-    width:100%; padding:8px; background:linear-gradient(135deg,#1a3a8f,#2a5ad0);
-    color:#b8ccff; border:1px solid #2a5ad0; border-radius:6px;
-    font-size:11px; cursor:pointer; letter-spacing:1px;
-}
-#restartBtn:hover { background:linear-gradient(135deg,#2a4aaf,#3a6ae0); }
-#gameCanvas { cursor:crosshair; }
-#tip { margin-top:8px; font-size:9px; color:#1a2030; letter-spacing:1px; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;
+     min-height:100vh;font-family:Arial,sans-serif;color:#fff;user-select:none;overflow:hidden}
+#wrap{display:flex;gap:14px;align-items:flex-start}
+#sb{width:122px;padding-top:2px}
+.lbl{font-size:9px;color:#334;text-transform:uppercase;letter-spacing:2px;margin-bottom:2px}
+#sco{font-size:32px;font-weight:bold;color:#b8d0ff;text-shadow:0 0 12px rgba(100,150,255,.3);margin-bottom:1px}
+#hsc{font-size:10px;color:#334;margin-bottom:10px}
+#cmb{font-size:18px;font-weight:bold;min-height:24px;margin-bottom:8px;color:#ffdd88;
+     text-shadow:0 0 14px rgba(255,200,80,.6)}
+#nxt{background:rgba(8,12,28,.92);border:1px solid #182040;border-radius:9px;padding:9px;
+     text-align:center;margin-bottom:8px}
+#nxtName{font-size:8px;color:#445;margin-top:3px;text-transform:uppercase;letter-spacing:1px}
+#prvC{display:block;margin:5px auto 0}
+#lvlBadge{font-size:9px;padding:3px 7px;border-radius:4px;display:inline-block;
+           margin-bottom:8px;letter-spacing:1px;text-transform:uppercase;font-weight:bold}
+#goPanel{display:none;background:rgba(4,6,18,.97);border:1px solid #f85149;border-radius:9px;
+          padding:11px;text-align:center;margin-top:5px}
+#goPanel h2{color:#f85149;font-size:11px;letter-spacing:2px;margin-bottom:3px}
+#goFinal{font-size:24px;font-weight:bold;color:#b8d0ff;margin-bottom:7px}
+#btnBack{width:100%;padding:7px;background:rgba(30,50,100,.8);color:#88aadd;
+          border:1px solid #2a4a8f;border-radius:6px;font-size:10px;cursor:pointer;letter-spacing:1px;margin-bottom:5px}
+#btnBack:hover{background:rgba(40,60,120,.9)}
+#btnRedo{width:100%;padding:7px;background:linear-gradient(135deg,#1a3a8f,#2a5ad0);
+          color:#b8d0ff;border:1px solid #2a5ad0;border-radius:6px;font-size:11px;cursor:pointer;letter-spacing:1px}
+#btnRedo:hover{background:linear-gradient(135deg,#2a4aaf,#3a6ae0)}
+#gameCanvas{cursor:crosshair}
 </style>
 </head>
 <body>
-<div id="title">&#10022; COSMIC MERGE &#10022;</div>
-<div id="layout">
-    <canvas id="gameCanvas"></canvas>
-    <div id="sidebar">
-        <div class="lbl">Score</div>
-        <div id="scoreEl">0</div>
-        <div id="hsEl">BEST: 0</div>
-        <div id="comboEl"></div>
-        <div id="nextBox">
-            <div class="lbl">Volgende</div>
-            <canvas id="previewCanvas" width="70" height="70"></canvas>
-            <div id="nextName"></div>
-        </div>
-        <div id="goPanel">
-            <h2>GAME OVER</h2>
-            <div id="goScore">0</div>
-            <button id="restartBtn" onclick="restartGame()">Opnieuw</button>
-        </div>
+<div id="wrap">
+  <canvas id="gameCanvas"></canvas>
+  <div id="sb">
+    <div id="lvlBadge">Level 1</div>
+    <div class="lbl">Score</div>
+    <div id="sco">0</div>
+    <div id="hsc">BEST: 0</div>
+    <div id="cmb"></div>
+    <div id="nxt">
+      <div class="lbl">Volgende</div>
+      <canvas id="prvC" width="68" height="68"></canvas>
+      <div id="nxtName"></div>
     </div>
+    <div id="goPanel">
+      <h2>GAME OVER</h2>
+      <div id="goFinal">0</div>
+      <button id="btnBack" onclick="goSelect()">&#8592; Levels</button>
+      <button id="btnRedo" onclick="restartLevel()">Opnieuw</button>
+    </div>
+  </div>
 </div>
-<div id="tip">klik om te droppen &bull; zelfde lichaam = merge</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 <script>
-// ── Config ──────────────────────────────────────────────────────────────────
-const W=380, H=580, WALL=18, DANGER_Y=88, AIM_Y=52, MAX_SPAWN=4, DROP_MS=700, COMBO_MS=1500;
+// ═══════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════
+const W=380,H=580,WALL=18,DANGER_Y=88,AIM_Y=52,MAX_SPAWN=4,DROP_MS=700,COMBO_MS=1500;
 const COSMOS=[
-    {r:15,  name:'Stofwolk'},
-    {r:22,  name:'Asteroid'},
-    {r:30,  name:'Komeet'},
-    {r:40,  name:'Maan'},
-    {r:52,  name:'Rode Planeet'},
-    {r:65,  name:'Blauwe Planeet'},
-    {r:80,  name:'Gasreus'},
-    {r:96,  name:'IJsreus'},
-    {r:114, name:'Ster'},
-    {r:134, name:'Neutronenster'},
-    {r:156, name:'Zwart Gat'},
+  {r:15, name:'Stofwolk'},{r:22,name:'Asteroid'},{r:30,name:'Komeet'},
+  {r:40,name:'Maan'},{r:52,name:'Rode Planeet'},{r:65,name:'Blauwe Planeet'},
+  {r:80,name:'Gasreus'},{r:96,name:'IJsreus'},{r:114,name:'Ster'},
+  {r:134,name:'Neutronenster'},{r:156,name:'Zwart Gat'},
 ];
 const SCORES=[1,3,6,10,15,21,28,36,45,55,66];
+const LEVELS=[
+  {id:0,name:'The Void',       sub:'Standaard zwaartekracht',  color:'#6644ff',dark:'#2a1a80',
+   mechanic:'normal',   mul:1.0, gx:0,   gy:2,   icon:'&#9733;'},
+  {id:1,name:'Asteroid Field', sub:'Obstakels blokkeren je pad',color:'#cc8833',dark:'#6a3a10',
+   mechanic:'obstacles',mul:1.2, gx:0,   gy:2,   icon:'&#9762;'},
+  {id:2,name:'Solar Storm',    sub:'Zonnevlam verstoort banen', color:'#ff7722',dark:'#8a2a00',
+   mechanic:'solar',    mul:1.4, gx:0,   gy:1.9, icon:'&#9728;'},
+  {id:3,name:'Event Horizon',  sub:'Zwart gat trekt naar rechts',color:'#ff4422',dark:'#7a1800',
+   mechanic:'drift',    mul:1.6, gx:0.55,gy:1.7, icon:'&#9711;'},
+  {id:4,name:'Supernova',      sub:'Zwaartekracht draait rond', color:'#ff22cc',dark:'#7a0060',
+   mechanic:'chaos',    mul:2.0, gx:0,   gy:2,   icon:'&#10022;'},
+];
 const {Engine,Bodies,Body,World,Events}=Matter;
 
-// ── State ────────────────────────────────────────────────────────────────────
-let engine,world,canvas,ctx,bgCanvas,bgCtx;
-let balls=[],particles=[],texts=[],rings=[],dust=[];
-let score=0, hs=parseInt(localStorage.getItem('cosmicHS')||'0');
-let dead=false, canDrop=true, mouseX=W/2, cur=0, nxt=0;
-let mergingSet=new Set(), combo=0, comboTmr=null;
-let shakeF=0, shakeA=0, T=0;
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+let engine,world,canvas,ctx,pCtx;
+let gameState='select'; // 'select'|'play'
+let activeLvl=0;
+let balls=[],obstacles=[],particles=[],texts=[],rings=[];
+let dust=[],bgStars=[],bgDriftRocks=[];
+let score=0,hs=parseInt(localStorage.getItem('cosmicHS5')||'0');
+let dead=false,canDrop=true,mouseX=W/2,mouseY=0,cur=0,nxt=0;
+let mergingSet=new Set(),combo=0,comboTmr=null;
+let shakeF=0,shakeA=0,bloom=0,bloomCol='#ffffff';
+let T=0,hovCard=-1;
+// Level mechanic state
+let solarTimer=0,solarWarn=false,solarActive=false,solarDir=1,solarFlashA=0;
+let gravAngle=0,gravTargetAngle=0,gravChangeTmr=0;
 
-document.getElementById('hsEl').textContent='BEST: '+hs;
+// ═══════════════════════════════════════════════════
+//  DOM refs
+// ═══════════════════════════════════════════════════
+const elSco=()=>document.getElementById('sco');
+const elHsc=()=>document.getElementById('hsc');
+const elCmb=()=>document.getElementById('cmb');
+const elBadge=()=>document.getElementById('lvlBadge');
+const elGoPanel=()=>document.getElementById('goPanel');
+const elGoFinal=()=>document.getElementById('goFinal');
+const elNxtName=()=>document.getElementById('nxtName');
+const elSb=()=>document.getElementById('sb');
+elHsc().textContent='BEST: '+hs;
 
-// ── Background ───────────────────────────────────────────────────────────────
-let bgStars=[];
-function buildBg(){
-    bgCanvas=document.createElement('canvas');
-    bgCanvas.width=W; bgCanvas.height=H;
-    bgCtx=bgCanvas.getContext('2d');
-    const bg=bgCtx.createLinearGradient(0,0,W,H);
-    bg.addColorStop(0,'#020818'); bg.addColorStop(0.5,'#040c1c'); bg.addColorStop(1,'#020612');
-    bgCtx.fillStyle=bg; bgCtx.fillRect(0,0,W,H);
-    // nebula blobs
-    [{x:W*.2,y:H*.3,r:140,c:'rgba(55,15,110,0.18)'},{x:W*.8,y:H*.65,r:110,c:'rgba(15,55,95,0.14)'},
-     {x:W*.5,y:H*.08,r:85,c:'rgba(90,25,70,0.12)'},{x:W*.1,y:H*.82,r:95,c:'rgba(10,70,55,0.10)'}
-    ].forEach(n=>{
-        const g=bgCtx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r);
-        g.addColorStop(0,n.c); g.addColorStop(1,'rgba(0,0,0,0)');
-        bgCtx.fillStyle=g; bgCtx.fillRect(0,0,W,H);
-    });
-    bgStars=[];
-    for(let i=0;i<240;i++){
-        const x=Math.random()*W, y=Math.random()*H;
-        const r=Math.random()<0.05?1.4+Math.random()*.6:.3+Math.random()*.7;
-        const b=.3+Math.random()*.7, ts=.5+Math.random()*2, to=Math.random()*Math.PI*2;
-        bgStars.push({x,y,r,b,ts,to});
-        bgCtx.beginPath(); bgCtx.arc(x,y,r,0,Math.PI*2);
-        bgCtx.fillStyle=`rgba(255,255,255,${b*.55})`; bgCtx.fill();
-    }
+// ═══════════════════════════════════════════════════
+//  STAR / DUST INIT
+// ═══════════════════════════════════════════════════
+function initStars(){
+  bgStars=[];
+  for(let i=0;i<260;i++){
+    bgStars.push({x:Math.random()*W,y:Math.random()*H,
+      r:.3+Math.random()*(Math.random()<.05?1.5:.6),
+      b:.2+Math.random()*.8,ts:.4+Math.random()*2.2,to:Math.random()*Math.PI*2});
+  }
 }
 function initDust(){
-    for(let i=0;i<40;i++) dust.push({
-        x:Math.random()*W, y:Math.random()*H,
-        vx:(Math.random()-.5)*.25, vy:Math.random()*.12+.02,
-        r:.5+Math.random()*1.5, a:.08+Math.random()*.25,
-        blue:Math.random()<.5,
-    });
+  dust=[];
+  for(let i=0;i<38;i++) dust.push({
+    x:Math.random()*W,y:Math.random()*H,
+    vx:(Math.random()-.5)*.22,vy:Math.random()*.1+.02,
+    r:.5+Math.random()*1.4,a:.06+Math.random()*.22,blue:Math.random()<.55
+  });
+}
+function initDriftRocks(){
+  bgDriftRocks=[];
+  for(let i=0;i<12;i++) bgDriftRocks.push({
+    x:Math.random()*W,y:Math.random()*H,
+    r:5+Math.random()*22,spd:.18+Math.random()*.28,a:.04+Math.random()*.1,
+    ang:Math.random()*Math.PI*2,rot:(Math.random()-.5)*.005
+  });
 }
 
-// ── Draw utilities ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════
 function sphere(c,x,y,r,dark,mid,light,hi){
-    const g=c.createRadialGradient(x-r*.35,y-r*.38,r*.04,x+r*.1,y+r*.1,r*1.08);
-    g.addColorStop(0,hi); g.addColorStop(.28,light); g.addColorStop(.65,mid); g.addColorStop(1,dark);
-    c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fillStyle=g; c.fill();
+  const g=c.createRadialGradient(x-r*.36,y-r*.38,r*.04,x+r*.1,y+r*.1,r*1.08);
+  g.addColorStop(0,hi);g.addColorStop(.28,light);g.addColorStop(.65,mid);g.addColorStop(1,dark);
+  c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle=g;c.fill();
 }
-function outerGlow(c,x,y,r,col,a1,a2,mult1,mult2){
-    const g=c.createRadialGradient(x,y,r*mult1,x,y,r*mult2);
-    g.addColorStop(0,col.replace('__',a1)); g.addColorStop(1,col.replace('__',a2));
-    c.fillStyle=g; c.beginPath(); c.arc(x,y,r*mult2,0,Math.PI*2); c.fill();
-}
-function clipCircle(c,r){ c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.clip(); }
-
-// ── Cosmic body renderers ────────────────────────────────────────────────────
-function drawDust(c,x,y,r,ang){
-    for(let i=3;i>=0;i--){
-        const lr=r*(.4+i*.22), a=(.65-i*.12);
-        const g=c.createRadialGradient(x,y,0,x,y,lr);
-        g.addColorStop(0,`rgba(170,130,255,${a})`);
-        g.addColorStop(.55,`rgba(90,65,190,${a*.5})`);
-        g.addColorStop(1,'rgba(50,25,100,0)');
-        c.fillStyle=g; c.beginPath(); c.arc(x,y,lr,0,Math.PI*2); c.fill();
-    }
-    for(let i=0;i<7;i++){
-        const a=ang*1.6+(i/7)*Math.PI*2+T*.4;
-        c.beginPath(); c.arc(x+Math.cos(a)*r*.62, y+Math.sin(a)*r*.62, 1.1,0,Math.PI*2);
-        c.fillStyle='rgba(210,185,255,.75)'; c.fill();
-    }
+function clip(c,r){c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.clip();}
+function clampX(x,l){const r=COSMOS[l].r;return Math.max(WALL+r+2,Math.min(W-WALL-r-2,x));}
+function rndLvl(){return Math.floor(Math.random()*(MAX_SPAWN+1));}
+function rgba(col,a){
+  const r2=parseInt(col.slice(1,3),16),g2=parseInt(col.slice(3,5),16),b2=parseInt(col.slice(5,7),16);
+  return `rgba(${r2},${g2},${b2},${a})`;
 }
 
-function drawAsteroid(c,x,y,r,ang){
-    c.save(); c.translate(x,y); c.rotate(ang);
-    const offsets=[.86,.93,.79,.96,.83,.89,.76,.91,.84,.88];
-    c.beginPath();
-    offsets.forEach((s,i)=>{
-        const a=(i/offsets.length)*Math.PI*2, d=r*s;
-        i===0?c.moveTo(Math.cos(a)*d,Math.sin(a)*d):c.lineTo(Math.cos(a)*d,Math.sin(a)*d);
-    });
-    c.closePath();
-    const g=c.createRadialGradient(-r*.3,-r*.3,0,r*.2,r*.2,r*1.1);
-    g.addColorStop(0,'#989898'); g.addColorStop(.5,'#585858'); g.addColorStop(1,'#1e1e1e');
-    c.fillStyle=g; c.fill();
-    c.strokeStyle='#2a2a2a'; c.lineWidth=1; c.stroke();
-    [[.28,-.22,.17],[-.32,.22,.11],[.08,.32,.07]].forEach(([cx,cy,cr])=>{
-        c.beginPath(); c.arc(r*cx,r*cy,r*cr,0,Math.PI*2);
-        c.fillStyle='rgba(0,0,0,.4)'; c.fill();
-        c.strokeStyle='rgba(160,160,160,.15)'; c.lineWidth=.5; c.stroke();
-    });
-    c.restore();
+// ═══════════════════════════════════════════════════
+//  EFFECTS
+// ═══════════════════════════════════════════════════
+function spawnParticles(x,y,n,nova,col){
+  const cols=nova?['#fff','#fffaaa','#ffaa44','#ff6600']:
+    col?[col,col,'#fff']:['#aaddff','#88bbff','#ffffff'];
+  for(let i=0;i<n;i++){
+    const a=(Math.PI*2*i/n)+(Math.random()-.5)*.9;
+    const spd=nova?5+Math.random()*9:2+Math.random()*5;
+    particles.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd-1,
+      r:nova?2+Math.random()*5:1.5+Math.random()*3.5,
+      a:1,color:cols[Math.floor(Math.random()*cols.length)],
+      decay:.022+Math.random()*.02});
+  }
 }
-
-function drawComet(c,x,y,r,vx,vy){
-    c.save(); c.translate(x,y);
-    const spd=Math.hypot(vx,vy);
-    const tailAng=spd>.3?Math.atan2(-vy,-vx):-.8;
-    c.save(); c.rotate(tailAng);
-    const tLen=r*3.8;
-    const tg=c.createLinearGradient(0,0,tLen,0);
-    tg.addColorStop(0,'rgba(170,225,255,.55)'); tg.addColorStop(.5,'rgba(90,170,255,.2)'); tg.addColorStop(1,'rgba(70,150,255,0)');
-    c.fillStyle=tg; c.beginPath(); c.moveTo(0,-r*.38); c.lineTo(tLen,0); c.lineTo(0,r*.38); c.fill();
-    const tg2=c.createLinearGradient(0,0,tLen*.6,0);
-    tg2.addColorStop(0,'rgba(220,240,255,.35)'); tg2.addColorStop(1,'rgba(200,230,255,0)');
-    c.fillStyle=tg2; c.beginPath(); c.moveTo(0,-r*.14); c.lineTo(tLen*.6,0); c.lineTo(0,r*.14); c.fill();
-    c.restore();
-    sphere(c,0,0,r,'#163850','#2a6e9e','#5aaed4','#d8f0ff');
-    const cg=c.createRadialGradient(0,0,r*.8,0,0,r*1.7);
-    cg.addColorStop(0,'rgba(90,185,255,.14)'); cg.addColorStop(1,'rgba(60,140,255,0)');
-    c.fillStyle=cg; c.beginPath(); c.arc(0,0,r*1.7,0,Math.PI*2); c.fill();
-    c.restore();
-}
-
-function drawMoon(c,x,y,r,ang){
-    c.save(); c.translate(x,y); c.rotate(ang);
-    sphere(c,0,0,r,'#252525','#5a5a5a','#8e8e8e','#cccccc');
-    c.save(); clipCircle(c,r);
-    c.fillStyle='rgba(35,35,35,.5)';
-    c.beginPath(); c.ellipse(-r*.2,r*.12,r*.38,r*.28,.3,0,Math.PI*2); c.fill();
-    [[.28,-.3,.14],[-.38,.2,.10],[.1,.33,.07],[-.12,-.22,.055]].forEach(([cx,cy,cr])=>{
-        c.beginPath(); c.arc(r*cx,r*cy,r*cr,0,Math.PI*2);
-        c.fillStyle='rgba(45,45,45,.55)'; c.fill();
-        c.strokeStyle='rgba(175,175,175,.18)'; c.lineWidth=.5; c.stroke();
-    });
-    c.restore(); c.restore();
-}
-
-function drawMars(c,x,y,r,ang){
-    c.save(); c.translate(x,y); c.rotate(ang);
-    sphere(c,0,0,r,'#521808','#a83828','#cc5838','#f08060');
-    c.save(); clipCircle(c,r);
-    c.fillStyle='rgba(135,48,25,.4)';
-    c.beginPath(); c.ellipse(r*.2,r*.1,r*.28,r*.18,.5,0,Math.PI*2); c.fill();
-    c.fillStyle='rgba(95,32,18,.3)';
-    c.beginPath(); c.ellipse(-r*.28,-r*.14,r*.2,r*.14,-.3,0,Math.PI*2); c.fill();
-    c.fillStyle='rgba(235,238,255,.72)';
-    c.beginPath(); c.arc(0,-r,r*.32,0,Math.PI); c.fill();
-    c.restore(); c.restore();
-    const ag=c.createRadialGradient(x,y,r*.88,x,y,r*1.22);
-    ag.addColorStop(0,'rgba(190,75,35,0)'); ag.addColorStop(.5,'rgba(190,75,35,.07)'); ag.addColorStop(1,'rgba(190,75,35,0)');
-    c.fillStyle=ag; c.beginPath(); c.arc(x,y,r*1.22,0,Math.PI*2); c.fill();
-}
-
-function drawEarth(c,x,y,r,ang){
-    c.save(); c.translate(x,y); c.rotate(ang);
-    sphere(c,0,0,r,'#081e55','#1045b0','#1e72cc','#72b8f8');
-    c.save(); clipCircle(c,r);
-    c.fillStyle='rgba(35,125,45,.78)';
-    [[-0.14,-0.08,.33,.23,.18],[.28,.06,.19,.28,-.1],[-0.28,.18,.23,.18,.1]].forEach(([cx,cy,rw,rh,rot])=>{
-        c.save(); c.rotate(rot);
-        c.beginPath(); c.ellipse(r*cx,r*cy,r*rw,r*rh,0,0,Math.PI*2); c.fill();
-        c.restore();
-    });
-    c.fillStyle='rgba(225,235,255,.78)';
-    c.beginPath(); c.arc(0,-r,r*.28,0,Math.PI); c.fill();
-    c.beginPath(); c.arc(0,r,r*.18,Math.PI,Math.PI*2); c.fill();
-    c.restore(); c.restore();
-    // clouds on separate rotation
-    c.save(); c.translate(x,y); c.rotate(ang*.65+T*.06);
-    c.save(); clipCircle(c,r);
-    c.fillStyle='rgba(255,255,255,.2)';
-    [[-0.18,-0.28,.28,.1],[.1,.12,.22,.09],[-.1,.24,.18,.07]].forEach(([cx,cy,rw,rh])=>{
-        c.beginPath(); c.ellipse(r*cx,r*cy,r*rw,r*rh,0,0,Math.PI*2); c.fill();
-    });
-    c.restore(); c.restore();
-    const ag=c.createRadialGradient(x,y,r*.88,x,y,r*1.28);
-    ag.addColorStop(0,'rgba(25,90,210,0)'); ag.addColorStop(.5,'rgba(25,90,210,.09)'); ag.addColorStop(1,'rgba(25,90,210,0)');
-    c.fillStyle=ag; c.beginPath(); c.arc(x,y,r*1.28,0,Math.PI*2); c.fill();
-}
-
-function drawJupiter(c,x,y,r,ang){
-    c.save(); c.translate(x,y); c.rotate(ang);
-    sphere(c,0,0,r,'#52280c','#b06838','#d89050','#ffd898');
-    c.save(); clipCircle(c,r);
-    [[-.68,.13,'rgba(115,62,28,.52)'],[-.44,.1,'rgba(195,132,72,.42)'],[-.2,.11,'rgba(92,48,18,.48)'],
-     [.06,.08,'rgba(210,148,82,.36)'],[.2,.11,'rgba(100,54,22,.44)'],[.44,.1,'rgba(170,110,55,.38)'],[.62,.1,'rgba(82,44,18,.44)']
-    ].forEach(([cy,h,col])=>{ c.fillStyle=col; c.fillRect(-r,r*cy-r*h*.5,r*2,r*h); });
-    c.save(); c.rotate(T*.018);
-    c.fillStyle='rgba(175,45,28,.62)';
-    c.beginPath(); c.ellipse(r*.24,r*.1,r*.21,r*.13,.1,0,Math.PI*2); c.fill();
-    c.fillStyle='rgba(215,72,45,.38)';
-    c.beginPath(); c.ellipse(r*.24,r*.1,r*.13,r*.07,.1,0,Math.PI*2); c.fill();
-    c.restore(); c.restore(); c.restore();
-}
-
-function drawNeptune(c,x,y,r,ang){
-    c.save(); c.translate(x,y); c.rotate(ang);
-    sphere(c,0,0,r,'#081e58','#1235a0','#1c58cc','#55a0ff');
-    c.save(); clipCircle(c,r);
-    [[-.28,.18,'rgba(25,65,155,.42)'],[.1,.14,'rgba(35,75,172,.32)'],[.34,.14,'rgba(18,50,120,.38)']].forEach(([cy,h,col])=>{
-        c.fillStyle=col; c.fillRect(-r,r*cy,r*2,r*h);
-    });
-    c.fillStyle='rgba(140,195,255,.28)';
-    c.beginPath(); c.ellipse(-r*.18,-r*.14,r*.18,r*.11,-.2,0,Math.PI*2); c.fill();
-    c.restore(); c.restore();
-    // rings
-    c.save(); c.translate(x,y);
-    c.strokeStyle='rgba(88,148,218,.38)'; c.lineWidth=2.5;
-    c.beginPath(); c.ellipse(0,0,r*1.52,r*.28,0,0,Math.PI*2); c.stroke();
-    c.strokeStyle='rgba(68,125,195,.2)'; c.lineWidth=4.5;
-    c.beginPath(); c.ellipse(0,0,r*1.68,r*.33,0,0,Math.PI*2); c.stroke();
-    c.restore();
-}
-
-function drawStar(c,x,y,r){
-    // glow layers
-    [[3.4,.07],[2.4,.14],[1.75,.28]].forEach(([m,a])=>{
-        const g=c.createRadialGradient(x,y,r*.5,x,y,r*m);
-        g.addColorStop(0,`rgba(255,195,75,${a})`); g.addColorStop(1,'rgba(255,110,15,0)');
-        c.fillStyle=g; c.beginPath(); c.arc(x,y,r*m,0,Math.PI*2); c.fill();
-    });
-    sphere(c,x,y,r,'#ee3800','#ff8800','#ffbb00','#ffffff');
-    // surface convection
-    c.save(); c.translate(x,y); clipCircle(c,r);
-    c.fillStyle='rgba(255,65,0,.28)';
-    c.beginPath(); c.arc(r*.2,r*.1,r*.24,0,Math.PI*2); c.fill();
-    c.beginPath(); c.arc(-r*.28,-r*.08,r*.18,0,Math.PI*2); c.fill();
-    c.restore();
-    // corona rays
-    c.save(); c.translate(x,y);
-    for(let i=0;i<14;i++){
-        const a=(i/14)*Math.PI*2+T*.28;
-        const len=r*(.22+.14*Math.sin(T*2.2+i));
-        const rg=c.createLinearGradient(Math.cos(a)*r*.9,Math.sin(a)*r*.9,Math.cos(a)*(r+len),Math.sin(a)*(r+len));
-        rg.addColorStop(0,'rgba(255,215,70,.52)'); rg.addColorStop(1,'rgba(255,140,25,0)');
-        c.strokeStyle=rg; c.lineWidth=1.5;
-        c.beginPath(); c.moveTo(Math.cos(a)*r*.9,Math.sin(a)*r*.9);
-        c.lineTo(Math.cos(a)*(r+len),Math.sin(a)*(r+len)); c.stroke();
-    }
-    c.restore();
-}
-
-function drawNeutron(c,x,y,r){
-    const pulse=.92+.08*Math.sin(T*9);
-    // intense glow
-    [[4,.055],[3,.11],[2,.24]].forEach(([m,a])=>{
-        const g=c.createRadialGradient(x,y,0,x,y,r*m);
-        g.addColorStop(0,`rgba(165,215,255,${a})`); g.addColorStop(1,'rgba(90,170,255,0)');
-        c.fillStyle=g; c.beginPath(); c.arc(x,y,r*m,0,Math.PI*2); c.fill();
-    });
-    sphere(c,x,y,r*pulse,'#9ab8f8','#bcd4ff','#dce8ff','#ffffff');
-    // pulsar beams
-    c.save(); c.translate(x,y); c.rotate(T*3.2);
-    [-1,1].forEach(dir=>{
-        const bg=c.createLinearGradient(0,dir*r,0,dir*r*4.5);
-        bg.addColorStop(0,'rgba(165,215,255,.62)'); bg.addColorStop(1,'rgba(110,175,255,0)');
-        c.fillStyle=bg;
-        c.beginPath(); c.moveTo(-r*.14,0); c.lineTo(r*.14,0); c.lineTo(0,dir*r*4.5); c.fill();
-    });
-    c.restore();
-}
-
-function drawBlackHole(c,x,y,r){
-    // space warp
-    for(let i=5;i>=0;i--){
-        const g=c.createRadialGradient(x,y,r*(.5+i*.28),x,y,r*(.78+i*.28));
-        const a=[0,.018,.035,.052,.042,.025][i];
-        g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(.5,`rgba(0,0,0,${a})`); g.addColorStop(1,'rgba(0,0,0,0)');
-        c.fillStyle=g; c.beginPath(); c.arc(x,y,r*(.78+i*.28)*1.18,0,Math.PI*2); c.fill();
-    }
-    // accretion disk
-    c.save(); c.translate(x,y); c.rotate(T*.75);
-    const segs=36;
-    for(let i=0;i<segs;i++){
-        const a1=(i/segs)*Math.PI*2, a2=((i+1)/segs)*Math.PI*2;
-        const bright=.38+.62*Math.abs(Math.sin(i*.42+T*1.8));
-        const hue=25+i*.12;
-        c.fillStyle=`hsla(${hue},100%,${48+bright*22}%,${.55+bright*.32})`;
-        c.beginPath();
-        c.arc(0,0,r*1.88,a1,a2);
-        c.arc(0,0,r*1.12,a2,a1,true);
-        c.fill();
-    }
-    const dg=c.createRadialGradient(0,0,r*1.08,0,0,r*1.92);
-    dg.addColorStop(0,'rgba(255,255,190,.38)'); dg.addColorStop(.4,'rgba(255,140,45,.28)'); dg.addColorStop(1,'rgba(90,40,0,0)');
-    c.fillStyle=dg; c.beginPath(); c.arc(0,0,r*1.92,0,Math.PI*2); c.fill();
-    c.restore();
-    // event horizon
-    c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fillStyle='#000'; c.fill();
-    // edge glow
-    const eg=c.createRadialGradient(x,y,r*.82,x,y,r*1.06);
-    eg.addColorStop(0,'rgba(255,115,28,0)'); eg.addColorStop(.65,'rgba(255,155,45,.52)'); eg.addColorStop(1,'rgba(255,195,90,0)');
-    c.fillStyle=eg; c.beginPath(); c.arc(x,y,r*1.06,0,Math.PI*2); c.fill();
-    // polar jets
-    c.save(); c.translate(x,y);
-    [-1,1].forEach(dir=>{
-        const jg=c.createLinearGradient(0,dir*r,0,dir*r*3.8);
-        jg.addColorStop(0,'rgba(135,195,255,.52)'); jg.addColorStop(1,'rgba(90,165,255,0)');
-        c.fillStyle=jg;
-        c.beginPath(); c.moveTo(-r*.07,dir*r); c.lineTo(r*.07,dir*r); c.lineTo(0,dir*r*3.8); c.fill();
-    });
-    c.restore();
-}
-
-function drawBody(c,x,y,lvl,ang,vx,vy){
-    switch(lvl){
-        case 0: drawDust(c,x,y,COSMOS[0].r,ang); break;
-        case 1: drawAsteroid(c,x,y,COSMOS[1].r,ang); break;
-        case 2: drawComet(c,x,y,COSMOS[2].r,vx,vy); break;
-        case 3: drawMoon(c,x,y,COSMOS[3].r,ang); break;
-        case 4: drawMars(c,x,y,COSMOS[4].r,ang); break;
-        case 5: drawEarth(c,x,y,COSMOS[5].r,ang); break;
-        case 6: drawJupiter(c,x,y,COSMOS[6].r,ang); break;
-        case 7: drawNeptune(c,x,y,COSMOS[7].r,ang); break;
-        case 8: drawStar(c,x,y,COSMOS[8].r); break;
-        case 9: drawNeutron(c,x,y,COSMOS[9].r); break;
-        case 10: drawBlackHole(c,x,y,COSMOS[10].r); break;
-    }
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function clampX(x,lvl){ const r=COSMOS[lvl].r; return Math.max(WALL+r+2,Math.min(W-WALL-r-2,x)); }
-function rndLvl(){ return Math.floor(Math.random()*(MAX_SPAWN+1)); }
-
-// ── Effects ──────────────────────────────────────────────────────────────────
-function spawnParticles(x,y,lvl,nova){
-    const cols=nova?['#fff','#fffaaa','#ffaa44','#ff6600']:['#aaddff','#88bbff','#6699ff','#ffffff'];
-    const n=14+lvl*3;
-    for(let i=0;i<n;i++){
-        const a=(Math.PI*2*i/n)+(Math.random()-.5)*.9;
-        const spd=nova?4+Math.random()*9:2+Math.random()*4.5;
-        particles.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd-1,
-            r:nova?2+Math.random()*5:1.5+Math.random()*3,
-            a:1,color:cols[Math.floor(Math.random()*cols.length)],
-            decay:.024+Math.random()*.02});
-    }
-}
-function spawnRing(x,y,r,col){ rings.push({x,y,r,maxR:r*3.2,a:.9,color:col}); }
-function spawnText(x,y,txt,big){ texts.push({x,y,vy:-2.5,txt,a:1,big}); }
-function shake(amt){ shakeF=10; shakeA=amt; }
+function spawnRing(x,y,r,col){rings.push({x,y,r,maxR:r*3.4,a:.92,color:col});}
+function spawnText(x,y,txt,big,col){texts.push({x,y,vy:-2.5,txt,a:1,big,col:col||'#ffffff'});}
+function doShake(a){shakeF=10;shakeA=a;}
+function doBloom(col,str){bloom=str||.45;bloomCol=col||'#ffffff';}
 function doCombo(){
-    combo++;
-    clearTimeout(comboTmr);
-    comboTmr=setTimeout(()=>{ combo=0; document.getElementById('comboEl').textContent=''; },COMBO_MS);
-    document.getElementById('comboEl').textContent=combo>=2?`COMBO \xd7${combo}`:'';
+  combo++;clearTimeout(comboTmr);
+  comboTmr=setTimeout(()=>{combo=0;elCmb().textContent='';},COMBO_MS);
+  elCmb().textContent=combo>=2?`COMBO \xd7${combo}`:'';
 }
 
-// ── Physics ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+//  ANIMATED BACKGROUND FUNCTIONS (per level)
+// ═══════════════════════════════════════════════════
+function drawNebula(c,cx,cy,r,colA,colB,t,seed){
+  const breathe=r*(1+.12*Math.sin(t*.1+seed));
+  const g=c.createRadialGradient(cx,cy,0,cx,cy,breathe);
+  g.addColorStop(0,colA);g.addColorStop(.55,colB);g.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=g;c.beginPath();c.arc(cx,cy,breathe,0,Math.PI*2);c.fill();
+}
+function drawAurora(c,t){
+  for(let i=0;i<4;i++){
+    const y=H*(.15+i*.18)+18*Math.sin(t*.18+i*1.2);
+    c.save();c.globalAlpha=.03+.015*Math.sin(t*.25+i);
+    c.strokeStyle=`hsl(${160+i*20},80%,55%)`;c.lineWidth=18+10*Math.sin(t*.12+i*1.8);
+    c.beginPath();c.moveTo(0,y);
+    for(let x=0;x<=W;x+=18) c.lineTo(x,y+28*Math.sin(t*.38+x*.018+i));
+    c.stroke();c.restore();
+  }
+}
+
+// Level 0 – The Void
+function bgVoid(c){
+  const bg=c.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#020818');bg.addColorStop(.5,'#040c1e');bg.addColorStop(1,'#020612');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+  drawNebula(c,W*.22,H*.32,130,'rgba(65,25,180,.16)','rgba(40,15,100,.06)',T,0);
+  drawNebula(c,W*.78,H*.62,100,'rgba(20,55,155,.14)','rgba(10,30,80,.05)',T,2.5);
+  drawNebula(c,W*.5,H*.08,80,'rgba(90,20,120,.12)','rgba(50,10,70,.04)',T,5);
+  drawAurora(c,T);
+}
+
+// Level 1 – Asteroid Field
+function bgAsteroid(c){
+  const bg=c.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#080604');bg.addColorStop(1,'#040302');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+  drawNebula(c,W*.3,H*.4,110,'rgba(80,55,20,.12)','rgba(50,30,8,.04)',T,1);
+  drawNebula(c,W*.75,H*.6,90,'rgba(60,40,15,.1)','rgba(35,20,5,.03)',T,3.5);
+  bgDriftRocks.forEach(rk=>{
+    rk.x-=rk.spd;rk.ang+=rk.rot;
+    if(rk.x<-rk.r*3)rk.x=W+rk.r*2;
+    c.save();c.translate(rk.x,rk.y);c.rotate(rk.ang);
+    c.beginPath();
+    for(let i=0;i<8;i++){
+      const a=(i/8)*Math.PI*2, d=rk.r*([.85,.93,.78,.96,.82,.88,.75,.90][i]);
+      i===0?c.moveTo(Math.cos(a)*d,Math.sin(a)*d):c.lineTo(Math.cos(a)*d,Math.sin(a)*d);
+    }
+    c.closePath();c.fillStyle=`rgba(70,55,30,${rk.a})`;c.fill();c.restore();
+  });
+}
+
+// Level 2 – Solar Storm
+function bgSolar(c){
+  const bg=c.createLinearGradient(0,H,W,0);
+  bg.addColorStop(0,'#0c0400');bg.addColorStop(.4,'#180800');bg.addColorStop(1,'#060200');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+  // solar corona from bottom
+  for(let i=3;i>=0;i--){
+    const a=(.08-i*.018)*(1+.15*Math.sin(T*.4+i));
+    const g=c.createRadialGradient(W/2,H+40,20,W/2,H+40,H*.7+i*30);
+    g.addColorStop(0,`rgba(255,140,20,${a})`);
+    g.addColorStop(.5,`rgba(220,80,10,${a*.4})`);
+    g.addColorStop(1,'rgba(180,40,0,0)');
+    c.fillStyle=g;c.fillRect(0,0,W,H);
+  }
+  drawNebula(c,W*.2,H*.2,90,'rgba(200,60,10,.1)','rgba(140,30,5,.04)',T,1);
+  drawNebula(c,W*.8,H*.3,70,'rgba(220,100,15,.09)','rgba(160,50,5,.03)',T,4);
+  // corona ray tendrils
+  for(let i=0;i<8;i++){
+    const baseAng=-Math.PI/2+((i-.5)/7)*Math.PI*.9;
+    const ang=baseAng+.06*Math.sin(T*.3+i);
+    const len=80+30*Math.sin(T*.22+i*1.3);
+    const g=c.createLinearGradient(W/2,H,W/2+Math.cos(ang)*len,H+Math.sin(ang)*len);
+    g.addColorStop(0,`rgba(255,150,20,${.06+.02*Math.sin(T+i)})`);
+    g.addColorStop(1,'rgba(255,100,0,0)');
+    c.save();c.strokeStyle=g;c.lineWidth=8+4*Math.sin(T*.2+i);
+    c.beginPath();c.moveTo(W/2,H);c.lineTo(W/2+Math.cos(ang)*len,H+Math.sin(ang)*len);
+    c.stroke();c.restore();
+  }
+}
+
+// Level 3 – Event Horizon
+function bgHorizon(c){
+  const bg=c.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#040204');bg.addColorStop(1,'#0a0108');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+  drawNebula(c,W*.15,H*.4,120,'rgba(30,5,60,.18)','rgba(15,2,40,.06)',T,0);
+  // accretion glow bleeding from right wall
+  for(let i=0;i<4;i++){
+    const g=c.createRadialGradient(W+20,H/2,10,W+20,H/2,180+i*40);
+    const a=(.12-i*.025)*(1+.08*Math.sin(T*.5+i));
+    g.addColorStop(0,`rgba(255,140,40,${a})`);
+    g.addColorStop(.4,`rgba(180,60,10,${a*.5})`);
+    g.addColorStop(1,'rgba(100,20,5,0)');
+    c.fillStyle=g;c.fillRect(0,0,W,H);
+  }
+  // gravitational lensing lines toward right
+  c.save();c.globalAlpha=.08;c.strokeStyle='#ff8844';c.lineWidth=1;
+  for(let i=0;i<8;i++){
+    const y=H*(i/8)+20;
+    c.beginPath();c.moveTo(0,y);
+    for(let x=0;x<=W;x+=10){
+      const pull=((x/W)**2)*12*Math.sin(T*.2+i*.4);
+      c.lineTo(x,y+pull);
+    }
+    c.stroke();
+  }
+  c.restore();
+}
+
+// Level 4 – Supernova
+function bgSupernova(c){
+  const hue=(T*15)%360;
+  const bg=c.createRadialGradient(W/2,H/2,0,W/2,H/2,H*.8);
+  bg.addColorStop(0,`hsla(${hue},60%,8%,1)`);
+  bg.addColorStop(.5,`hsla(${(hue+120)%360},50%,4%,1)`);
+  bg.addColorStop(1,'#020008');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+  // radiating color bands
+  for(let i=0;i<5;i++){
+    const r2=H*(.15+i*.16)+20*Math.sin(T*.3+i);
+    const g=c.createRadialGradient(W/2,H/2,r2*.6,W/2,H/2,r2);
+    const h=(hue+i*60)%360;
+    g.addColorStop(0,`hsla(${h},90%,50%,0)`);
+    g.addColorStop(.7,`hsla(${h},90%,50%,.04)`);
+    g.addColorStop(1,`hsla(${h},90%,50%,0)`);
+    c.fillStyle=g;c.fillRect(0,0,W,H);
+  }
+  // random flash
+  if(Math.random()<.005){
+    c.fillStyle=`hsla(${Math.random()*360},100%,80%,.08)`;
+    c.fillRect(0,0,W,H);
+  }
+  drawNebula(c,W*.2,H*.25,100,`hsla(${hue},70%,40%,.12)`,`hsla(${hue},50%,20%,.04)`,T,0);
+  drawNebula(c,W*.8,H*.7,90,`hsla(${(hue+180)%360},70%,40%,.10)`,`hsla(${(hue+180)%360},50%,20%,.03)`,T,3);
+}
+
+function drawLevelBg(c){
+  [bgVoid,bgAsteroid,bgSolar,bgHorizon,bgSupernova][activeLvl](c);
+}
+
+// ═══════════════════════════════════════════════════
+//  DRAW STARS + DUST (shared)
+// ═══════════════════════════════════════════════════
+function drawStars(c){
+  bgStars.forEach(s=>{
+    const tw=.35+.65*Math.abs(Math.sin(T*s.ts+s.to));
+    c.beginPath();c.arc(s.x,s.y,s.r,0,Math.PI*2);
+    c.fillStyle=`rgba(255,255,255,${s.b*tw*.9})`;c.fill();
+  });
+}
+function drawDust(c){
+  dust.forEach(d=>{
+    d.x+=d.vx;d.y+=d.vy;
+    if(d.y>H)d.y=0;if(d.x<0)d.x=W;if(d.x>W)d.x=0;
+    c.beginPath();c.arc(d.x,d.y,d.r,0,Math.PI*2);
+    c.fillStyle=d.blue?`rgba(120,120,255,${d.a})`:`rgba(255,160,80,${d.a})`;c.fill();
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  COSMIC BODY RENDERERS
+// ═══════════════════════════════════════════════════
+function drawBodyDust(c,x,y,r,ang){
+  for(let i=3;i>=0;i--){
+    const lr=r*(.42+i*.2),a=(.68-i*.12);
+    const g=c.createRadialGradient(x,y,0,x,y,lr);
+    g.addColorStop(0,`rgba(175,135,255,${a})`);
+    g.addColorStop(.55,`rgba(95,68,200,${a*.5})`);
+    g.addColorStop(1,'rgba(55,28,100,0)');
+    c.fillStyle=g;c.beginPath();c.arc(x,y,lr,0,Math.PI*2);c.fill();
+  }
+  for(let i=0;i<7;i++){
+    const a=ang*1.6+(i/7)*Math.PI*2+T*.38;
+    c.beginPath();c.arc(x+Math.cos(a)*r*.64,y+Math.sin(a)*r*.64,1.1,0,Math.PI*2);
+    c.fillStyle='rgba(215,190,255,.72)';c.fill();
+  }
+}
+function drawBodyAsteroid(c,x,y,r,ang){
+  c.save();c.translate(x,y);c.rotate(ang);
+  const pts=[.86,.93,.79,.96,.83,.89,.76,.91,.84,.88];
+  c.beginPath();
+  pts.forEach((s,i)=>{
+    const a=(i/pts.length)*Math.PI*2,d=r*s;
+    i===0?c.moveTo(Math.cos(a)*d,Math.sin(a)*d):c.lineTo(Math.cos(a)*d,Math.sin(a)*d);
+  });
+  c.closePath();
+  const g=c.createRadialGradient(-r*.3,-r*.3,0,r*.2,r*.2,r*1.1);
+  g.addColorStop(0,'#999');g.addColorStop(.5,'#585858');g.addColorStop(1,'#1e1e1e');
+  c.fillStyle=g;c.fill();c.strokeStyle='#2a2a2a';c.lineWidth=1;c.stroke();
+  [[.28,-.22,.17],[-.32,.22,.11],[.08,.32,.07]].forEach(([cx,cy,cr])=>{
+    c.beginPath();c.arc(r*cx,r*cy,r*cr,0,Math.PI*2);
+    c.fillStyle='rgba(0,0,0,.4)';c.fill();
+  });
+  c.restore();
+}
+function drawBodyComet(c,x,y,r,vx,vy){
+  c.save();c.translate(x,y);
+  const spd=Math.hypot(vx,vy);
+  const ta=spd>.3?Math.atan2(-vy,-vx):-.75;
+  const tLen=r*3.9;
+  c.save();c.rotate(ta);
+  const tg=c.createLinearGradient(0,0,tLen,0);
+  tg.addColorStop(0,'rgba(175,230,255,.58)');tg.addColorStop(.5,'rgba(90,175,255,.22)');tg.addColorStop(1,'rgba(70,155,255,0)');
+  c.fillStyle=tg;c.beginPath();c.moveTo(0,-r*.38);c.lineTo(tLen,0);c.lineTo(0,r*.38);c.fill();
+  const tg2=c.createLinearGradient(0,0,tLen*.62,0);
+  tg2.addColorStop(0,'rgba(225,242,255,.35)');tg2.addColorStop(1,'rgba(200,230,255,0)');
+  c.fillStyle=tg2;c.beginPath();c.moveTo(0,-r*.13);c.lineTo(tLen*.62,0);c.lineTo(0,r*.13);c.fill();
+  c.restore();
+  sphere(c,0,0,r,'#163850','#2a6e9e','#5aaed4','#d8f0ff');
+  const cg=c.createRadialGradient(0,0,r*.8,0,0,r*1.75);
+  cg.addColorStop(0,'rgba(90,188,255,.14)');cg.addColorStop(1,'rgba(60,140,255,0)');
+  c.fillStyle=cg;c.beginPath();c.arc(0,0,r*1.75,0,Math.PI*2);c.fill();
+  c.restore();
+}
+function drawBodyMoon(c,x,y,r,ang){
+  c.save();c.translate(x,y);c.rotate(ang);
+  sphere(c,0,0,r,'#242424','#5a5a5a','#8e8e8e','#cecece');
+  c.save();clip(c,r);
+  c.fillStyle='rgba(35,35,35,.52)';c.beginPath();c.ellipse(-r*.2,r*.1,r*.38,r*.27,.3,0,Math.PI*2);c.fill();
+  [[.28,-.3,.14],[-.38,.2,.10],[.1,.33,.07],[-.12,-.22,.055]].forEach(([cx,cy,cr])=>{
+    c.beginPath();c.arc(r*cx,r*cy,r*cr,0,Math.PI*2);
+    c.fillStyle='rgba(45,45,45,.55)';c.fill();
+  });
+  c.restore();c.restore();
+}
+function drawBodyMars(c,x,y,r,ang){
+  c.save();c.translate(x,y);c.rotate(ang);
+  sphere(c,0,0,r,'#521808','#a83828','#cc5838','#f08060');
+  c.save();clip(c,r);
+  c.fillStyle='rgba(135,48,25,.4)';c.beginPath();c.ellipse(r*.2,r*.1,r*.28,r*.18,.5,0,Math.PI*2);c.fill();
+  c.fillStyle='rgba(95,32,18,.3)';c.beginPath();c.ellipse(-r*.28,-r*.14,r*.2,r*.14,-.3,0,Math.PI*2);c.fill();
+  c.fillStyle='rgba(235,238,255,.72)';c.beginPath();c.arc(0,-r,r*.32,0,Math.PI);c.fill();
+  c.restore();c.restore();
+  const ag=c.createRadialGradient(x,y,r*.88,x,y,r*1.22);
+  ag.addColorStop(0,'rgba(190,75,35,0)');ag.addColorStop(.5,'rgba(190,75,35,.07)');ag.addColorStop(1,'rgba(190,75,35,0)');
+  c.fillStyle=ag;c.beginPath();c.arc(x,y,r*1.22,0,Math.PI*2);c.fill();
+}
+function drawBodyEarth(c,x,y,r,ang){
+  c.save();c.translate(x,y);c.rotate(ang);
+  sphere(c,0,0,r,'#081e55','#1045b0','#1e72cc','#72b8f8');
+  c.save();clip(c,r);
+  c.fillStyle='rgba(35,125,45,.78)';
+  [[-0.14,-0.08,.33,.23,.18],[.28,.06,.19,.28,-.1],[-0.28,.18,.23,.18,.1]].forEach(([cx,cy,rw,rh,rot])=>{
+    c.save();c.rotate(rot);c.beginPath();c.ellipse(r*cx,r*cy,r*rw,r*rh,0,0,Math.PI*2);c.fill();c.restore();
+  });
+  c.fillStyle='rgba(225,235,255,.78)';c.beginPath();c.arc(0,-r,r*.28,0,Math.PI);c.fill();
+  c.beginPath();c.arc(0,r,r*.18,Math.PI,Math.PI*2);c.fill();
+  c.restore();c.restore();
+  c.save();c.translate(x,y);c.rotate(ang*.65+T*.06);
+  c.save();clip(c,r);c.fillStyle='rgba(255,255,255,.2)';
+  [[-0.18,-0.28,.28,.1],[.1,.12,.22,.09],[-.1,.24,.18,.07]].forEach(([cx,cy,rw,rh])=>{
+    c.beginPath();c.ellipse(r*cx,r*cy,r*rw,r*rh,0,0,Math.PI*2);c.fill();
+  });
+  c.restore();c.restore();
+  const ag=c.createRadialGradient(x,y,r*.88,x,y,r*1.28);
+  ag.addColorStop(0,'rgba(25,90,210,0)');ag.addColorStop(.5,'rgba(25,90,210,.09)');ag.addColorStop(1,'rgba(25,90,210,0)');
+  c.fillStyle=ag;c.beginPath();c.arc(x,y,r*1.28,0,Math.PI*2);c.fill();
+}
+function drawBodyJupiter(c,x,y,r,ang){
+  c.save();c.translate(x,y);c.rotate(ang);
+  sphere(c,0,0,r,'#52280c','#b06838','#d89050','#ffd898');
+  c.save();clip(c,r);
+  [[-.68,.13,'rgba(115,62,28,.52)'],[-.44,.1,'rgba(195,132,72,.42)'],[-.2,.11,'rgba(92,48,18,.48)'],
+   [.06,.08,'rgba(210,148,82,.36)'],[.2,.11,'rgba(100,54,22,.44)'],[.44,.1,'rgba(170,110,55,.38)'],
+   [.62,.1,'rgba(82,44,18,.44)']].forEach(([cy2,h,col])=>{
+    c.fillStyle=col;c.fillRect(-r,r*cy2-r*h*.5,r*2,r*h);
+  });
+  c.save();c.rotate(T*.018);
+  c.fillStyle='rgba(175,45,28,.62)';c.beginPath();c.ellipse(r*.24,r*.1,r*.21,r*.13,.1,0,Math.PI*2);c.fill();
+  c.fillStyle='rgba(215,72,45,.38)';c.beginPath();c.ellipse(r*.24,r*.1,r*.13,r*.07,.1,0,Math.PI*2);c.fill();
+  c.restore();c.restore();c.restore();
+}
+function drawBodyNeptune(c,x,y,r,ang){
+  c.save();c.translate(x,y);c.rotate(ang);
+  sphere(c,0,0,r,'#081e58','#1235a0','#1c58cc','#55a0ff');
+  c.save();clip(c,r);
+  [[-.28,.18,'rgba(25,65,155,.42)'],[.1,.14,'rgba(35,75,172,.32)'],[.34,.14,'rgba(18,50,120,.38)']].forEach(([cy2,h,col])=>{
+    c.fillStyle=col;c.fillRect(-r,r*cy2,r*2,r*h);
+  });
+  c.fillStyle='rgba(140,195,255,.28)';c.beginPath();c.ellipse(-r*.18,-r*.14,r*.18,r*.11,-.2,0,Math.PI*2);c.fill();
+  c.restore();c.restore();
+  c.save();c.translate(x,y);
+  c.strokeStyle='rgba(88,148,218,.38)';c.lineWidth=2.5;
+  c.beginPath();c.ellipse(0,0,r*1.52,r*.28,0,0,Math.PI*2);c.stroke();
+  c.strokeStyle='rgba(68,125,195,.2)';c.lineWidth=4.5;
+  c.beginPath();c.ellipse(0,0,r*1.68,r*.33,0,0,Math.PI*2);c.stroke();
+  c.restore();
+}
+function drawBodyStar(c,x,y,r){
+  [[3.4,.07],[2.4,.14],[1.75,.28]].forEach(([m,a])=>{
+    const g=c.createRadialGradient(x,y,r*.5,x,y,r*m);
+    g.addColorStop(0,`rgba(255,195,75,${a})`);g.addColorStop(1,'rgba(255,110,15,0)');
+    c.fillStyle=g;c.beginPath();c.arc(x,y,r*m,0,Math.PI*2);c.fill();
+  });
+  sphere(c,x,y,r,'#ee3800','#ff8800','#ffbb00','#ffffff');
+  c.save();c.translate(x,y);clip(c,r);
+  c.fillStyle='rgba(255,65,0,.28)';
+  c.beginPath();c.arc(r*.2,r*.1,r*.24,0,Math.PI*2);c.fill();
+  c.beginPath();c.arc(-r*.28,-r*.08,r*.18,0,Math.PI*2);c.fill();
+  c.restore();
+  c.save();c.translate(x,y);
+  for(let i=0;i<14;i++){
+    const a=(i/14)*Math.PI*2+T*.28;
+    const len=r*(.22+.14*Math.sin(T*2.2+i));
+    const rg=c.createLinearGradient(Math.cos(a)*r*.9,Math.sin(a)*r*.9,Math.cos(a)*(r+len),Math.sin(a)*(r+len));
+    rg.addColorStop(0,'rgba(255,215,70,.52)');rg.addColorStop(1,'rgba(255,140,25,0)');
+    c.strokeStyle=rg;c.lineWidth=1.5;
+    c.beginPath();c.moveTo(Math.cos(a)*r*.9,Math.sin(a)*r*.9);
+    c.lineTo(Math.cos(a)*(r+len),Math.sin(a)*(r+len));c.stroke();
+  }
+  c.restore();
+}
+function drawBodyNeutron(c,x,y,r){
+  const pulse=.92+.08*Math.sin(T*9.2);
+  [[4,.055],[3,.11],[2,.24]].forEach(([m,a])=>{
+    const g=c.createRadialGradient(x,y,0,x,y,r*m);
+    g.addColorStop(0,`rgba(165,215,255,${a})`);g.addColorStop(1,'rgba(90,170,255,0)');
+    c.fillStyle=g;c.beginPath();c.arc(x,y,r*m,0,Math.PI*2);c.fill();
+  });
+  sphere(c,x,y,r*pulse,'#9ab8f8','#bcd4ff','#dce8ff','#ffffff');
+  c.save();c.translate(x,y);c.rotate(T*3.2);
+  [-1,1].forEach(dir=>{
+    const bg=c.createLinearGradient(0,dir*r,0,dir*r*4.5);
+    bg.addColorStop(0,'rgba(165,215,255,.62)');bg.addColorStop(1,'rgba(110,175,255,0)');
+    c.fillStyle=bg;c.beginPath();c.moveTo(-r*.14,0);c.lineTo(r*.14,0);c.lineTo(0,dir*r*4.5);c.fill();
+  });
+  c.restore();
+}
+function drawBodyBlackHole(c,x,y,r){
+  for(let i=5;i>=0;i--){
+    const g=c.createRadialGradient(x,y,r*(.5+i*.28),x,y,r*(.78+i*.28));
+    const a=[0,.018,.035,.052,.042,.025][i];
+    g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(.5,`rgba(0,0,0,${a})`);g.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle=g;c.beginPath();c.arc(x,y,r*(.78+i*.28)*1.18,0,Math.PI*2);c.fill();
+  }
+  c.save();c.translate(x,y);c.rotate(T*.75);
+  for(let i=0;i<36;i++){
+    const a1=(i/36)*Math.PI*2,a2=((i+1)/36)*Math.PI*2;
+    const br=.38+.62*Math.abs(Math.sin(i*.42+T*1.8));
+    c.fillStyle=`hsla(${25+i*.12},100%,${48+br*22}%,${.55+br*.32})`;
+    c.beginPath();c.arc(0,0,r*1.88,a1,a2);c.arc(0,0,r*1.12,a2,a1,true);c.fill();
+  }
+  const dg=c.createRadialGradient(0,0,r*1.08,0,0,r*1.92);
+  dg.addColorStop(0,'rgba(255,255,190,.38)');dg.addColorStop(.4,'rgba(255,140,45,.28)');dg.addColorStop(1,'rgba(90,40,0,0)');
+  c.fillStyle=dg;c.beginPath();c.arc(0,0,r*1.92,0,Math.PI*2);c.fill();
+  c.restore();
+  c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle='#000';c.fill();
+  const eg=c.createRadialGradient(x,y,r*.82,x,y,r*1.06);
+  eg.addColorStop(0,'rgba(255,115,28,0)');eg.addColorStop(.65,'rgba(255,155,45,.52)');eg.addColorStop(1,'rgba(255,195,90,0)');
+  c.fillStyle=eg;c.beginPath();c.arc(x,y,r*1.06,0,Math.PI*2);c.fill();
+  c.save();c.translate(x,y);
+  [-1,1].forEach(dir=>{
+    const jg=c.createLinearGradient(0,dir*r,0,dir*r*3.8);
+    jg.addColorStop(0,'rgba(135,195,255,.52)');jg.addColorStop(1,'rgba(90,165,255,0)');
+    c.fillStyle=jg;c.beginPath();c.moveTo(-r*.07,dir*r);c.lineTo(r*.07,dir*r);c.lineTo(0,dir*r*3.8);c.fill();
+  });
+  c.restore();
+}
+function drawCosmic(c,x,y,lvl,ang,vx,vy){
+  switch(lvl){
+    case 0:drawBodyDust(c,x,y,COSMOS[0].r,ang);break;
+    case 1:drawBodyAsteroid(c,x,y,COSMOS[1].r,ang);break;
+    case 2:drawBodyComet(c,x,y,COSMOS[2].r,vx,vy);break;
+    case 3:drawBodyMoon(c,x,y,COSMOS[3].r,ang);break;
+    case 4:drawBodyMars(c,x,y,COSMOS[4].r,ang);break;
+    case 5:drawBodyEarth(c,x,y,COSMOS[5].r,ang);break;
+    case 6:drawBodyJupiter(c,x,y,COSMOS[6].r,ang);break;
+    case 7:drawBodyNeptune(c,x,y,COSMOS[7].r,ang);break;
+    case 8:drawBodyStar(c,x,y,COSMOS[8].r);break;
+    case 9:drawBodyNeutron(c,x,y,COSMOS[9].r);break;
+    case 10:drawBodyBlackHole(c,x,y,COSMOS[10].r);break;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  PHYSICS
+// ═══════════════════════════════════════════════════
 function setupEngine(){
-    engine=Engine.create({gravity:{x:0,y:2}}); world=engine.world;
-    const o={isStatic:true,restitution:.15,friction:.9,label:'wall'};
-    World.add(world,[
-        Bodies.rectangle(W/2,H+WALL/2,W,WALL,o),
-        Bodies.rectangle(WALL/2,H/2,WALL,H*2,o),
-        Bodies.rectangle(W-WALL/2,H/2,WALL,H*2,o),
-    ]);
-    Events.on(engine,'collisionStart',onCol);
+  const lv=LEVELS[activeLvl];
+  engine=Engine.create({gravity:{x:lv.gx,y:lv.gy}});
+  world=engine.world;
+  const wo={isStatic:true,restitution:.15,friction:.9,label:'wall'};
+  World.add(world,[
+    Bodies.rectangle(W/2,H+WALL/2,W,WALL,wo),
+    Bodies.rectangle(WALL/2,H/2,WALL,H*2,wo),
+    Bodies.rectangle(W-WALL/2,H/2,WALL,H*2,wo),
+  ]);
+  if(lv.mechanic==='obstacles') spawnObstacles();
+  Events.on(engine,'collisionStart',onCol);
 }
-
+function spawnObstacles(){
+  obstacles=[];
+  const configs=[
+    [W*.28,H*.42,16],[W*.68,H*.5,20],[W*.5,H*.32,14],[W*.22,H*.62,18]
+  ];
+  configs.forEach(([x,y,r])=>{
+    const b=Bodies.circle(x,y,r,{isStatic:true,restitution:.55,friction:.2,label:'obstacle'});
+    World.add(world,b);obstacles.push(b);
+  });
+}
 function onCol(ev){
-    for(const p of ev.pairs){
-        const a=p.bodyA, b=p.bodyB;
-        if(a.bl===undefined||b.bl===undefined) continue;
-        if(a.bl!==b.bl||a.bl>=COSMOS.length-1) continue;
-        if(a.mg||b.mg) continue;
-        const key=Math.min(a.id,b.id)+'_'+Math.max(a.id,b.id);
-        if(mergingSet.has(key)) continue;
-        mergingSet.add(key); a.mg=b.mg=true;
-        const lvl=a.bl, mx=(a.position.x+b.position.x)/2, my=(a.position.y+b.position.y)/2;
-        setTimeout(()=>{
-            if(!balls.includes(a)||!balls.includes(b)){ mergingSet.delete(key); return; }
-            rmBall(a); rmBall(b);
-            const nl=lvl+1;
-            const gained=Math.round(SCORES[nl]*(combo>=2?1+combo*.25:1));
-            score+=gained;
-            document.getElementById('scoreEl').textContent=score;
-            doCombo();
-            const nova=nl>=8;
-            spawnParticles(mx,my,nl,nova);
-            spawnRing(mx,my,COSMOS[lvl].r,nova?'#ffcc44':'#88aaff');
-            spawnText(mx,my-COSMOS[lvl].r,combo>=2?`+${gained} \xd7${combo}`:`+${gained}`,combo>=2);
-            if(nl>=6) shake(nl-4);
-            addBall(mx,my,nl,true);
-            mergingSet.delete(key);
-        },30);
-    }
+  for(const p of ev.pairs){
+    const a=p.bodyA,b=p.bodyB;
+    if(a.bl===undefined||b.bl===undefined)continue;
+    if(a.bl!==b.bl||a.bl>=COSMOS.length-1)continue;
+    if(a.mg||b.mg)continue;
+    const key=Math.min(a.id,b.id)+'_'+Math.max(a.id,b.id);
+    if(mergingSet.has(key))continue;
+    mergingSet.add(key);a.mg=b.mg=true;
+    const lvl=a.bl,mx=(a.position.x+b.position.x)/2,my=(a.position.y+b.position.y)/2;
+    setTimeout(()=>{
+      if(!balls.includes(a)||!balls.includes(b)){mergingSet.delete(key);return;}
+      rmBall(a);rmBall(b);
+      const nl=lvl+1;
+      const mul=LEVELS[activeLvl].mul;
+      const gained=Math.round(SCORES[nl]*mul*(combo>=2?1+combo*.25:1));
+      score+=gained;elSco().textContent=score;
+      doCombo();
+      const nova=nl>=8;
+      const col=LEVELS[activeLvl].color;
+      spawnParticles(mx,my,16+nl*3,nova,nova?null:col);
+      spawnRing(mx,my,COSMOS[lvl].r,nova?'#ffcc44':col);
+      spawnText(mx,my-COSMOS[lvl].r,combo>=2?`+${gained}\xd7${combo}`:`+${gained}`,combo>=2,nova?'#ffee88':null);
+      if(nl>=6)doShake(nl-4);
+      if(nova)doBloom('#ffeeaa',.55);else doBloom(col,.3);
+      addBall(mx,my,nl,true);
+      mergingSet.delete(key);
+    },30);
+  }
 }
-
 function addBall(x,y,lvl,merged){
-    const r=COSMOS[lvl].r;
-    const b=Bodies.circle(x,y,r,{restitution:.2,friction:.6,frictionAir:.008,label:'ball'});
-    b.bl=lvl; b.mg=false; b.fresh=!merged; b.born=performance.now();
-    if(!merged) Body.setVelocity(b,{x:0,y:0});
-    World.add(world,b); balls.push(b); return b;
+  const r=COSMOS[lvl].r;
+  const b=Bodies.circle(x,y,r,{restitution:.2,friction:.6,frictionAir:.008,label:'ball'});
+  b.bl=lvl;b.mg=false;b.fresh=!merged;b.born=performance.now();
+  if(!merged)Body.setVelocity(b,{x:0,y:0});
+  World.add(world,b);balls.push(b);return b;
 }
-function rmBall(b){ World.remove(world,b); balls=balls.filter(x=>x!==b); }
+function rmBall(b){World.remove(world,b);balls=balls.filter(x=>x!==b);}
 
-function blackHoleGravity(){
-    for(const bh of balls){
-        if(bh.bl!==10) continue;
-        for(const o of balls){
-            if(o===bh||o.mg) continue;
-            const dx=bh.position.x-o.position.x, dy=bh.position.y-o.position.y;
-            const d=Math.hypot(dx,dy);
-            if(d<260&&d>COSMOS[10].r+COSMOS[o.bl].r+5){
-                const f=.000028/(d*d/9000+.1);
-                Body.applyForce(o,o.position,{x:dx*f,y:dy*f});
-            }
-        }
+// Black hole gravity
+function applyBhGrav(){
+  for(const bh of balls){
+    if(bh.bl!==10)continue;
+    for(const o of balls){
+      if(o===bh||o.mg)continue;
+      const dx=bh.position.x-o.position.x,dy=bh.position.y-o.position.y;
+      const d=Math.hypot(dx,dy);
+      if(d<260&&d>COSMOS[10].r+COSMOS[o.bl].r+5){
+        const f=.000028/(d*d/9000+.1);
+        Body.applyForce(o,o.position,{x:dx*f,y:dy*f});
+      }
     }
+  }
 }
 
-// ── Drop & game over ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+//  LEVEL MECHANICS (update each frame)
+// ═══════════════════════════════════════════════════
+function updateMechanics(dt){
+  const mech=LEVELS[activeLvl].mechanic;
+  if(mech==='solar'){
+    solarTimer+=dt;
+    if(!solarWarn&&!solarActive&&solarTimer>7){solarWarn=true;}
+    if(solarWarn&&solarTimer>9){
+      solarWarn=false;solarActive=true;solarDir=Math.random()>.5?1:-1;solarTimer=0;
+      balls.forEach(b=>Body.applyForce(b,b.position,{x:solarDir*.045,y:-.008}));
+      spawnParticles(solarDir>0?WALL:W-WALL,H/2,20,false,solarDir>0?'#ff8822':'#ffaa22');
+      doBloom('#ff9944',.4);doShake(4);
+      setTimeout(()=>solarActive=false,1400);
+    }
+    if(solarActive){
+      balls.forEach(b=>Body.applyForce(b,b.position,{x:solarDir*.0025,y:0}));
+    }
+  }
+  if(mech==='chaos'){
+    // smoothly rotate gravity
+    const target=gravTargetAngle;
+    gravAngle+=Math.sign(Math.sin(target-gravAngle))*.008;
+    engine.gravity.x=Math.sin(gravAngle)*1.85;
+    engine.gravity.y=Math.cos(gravAngle)*1.85+.35;
+    gravChangeTmr+=dt;
+    if(gravChangeTmr>5){gravChangeTmr=0;gravTargetAngle=Math.random()*Math.PI*2;}
+  }
+}
+function drawMechanicOverlay(){
+  const mech=LEVELS[activeLvl].mechanic;
+  // Solar: warning bar
+  if(mech==='solar'&&solarWarn){
+    const prog=Math.min(1,(solarTimer-7)/2);
+    const bx=solarDir>0?WALL:W-WALL-6;
+    const g=ctx.createLinearGradient(bx,0,bx+(solarDir>0?6:-6),0);
+    g.addColorStop(0,'rgba(255,100,0,0)');g.addColorStop(1,`rgba(255,160,30,${.4+.3*Math.sin(T*8)})`);
+    ctx.fillStyle=g;ctx.fillRect(solarDir>0?WALL:W-WALL-6,0,6,H*prog);
+    ctx.save();ctx.globalAlpha=.5+.5*Math.sin(T*6);
+    ctx.font='bold 13px Arial';ctx.textAlign='center';ctx.fillStyle='#ff9933';
+    ctx.shadowColor='#ff6600';ctx.shadowBlur=10;
+    ctx.fillText('SOLAR FLARE!',W/2,DANGER_Y+22);ctx.restore();
+  }
+  if(mech==='solar'&&solarActive){
+    const g=ctx.createLinearGradient(solarDir>0?0:W,H/2,solarDir>0?W:0,H/2);
+    g.addColorStop(0,`rgba(255,150,30,.18)`);g.addColorStop(1,'rgba(255,100,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }
+  // Chaos: gravity arrow
+  if(mech==='chaos'){
+    const gx=engine.gravity.x,gy=engine.gravity.y;
+    const ang=Math.atan2(gy,gx);
+    const cx=W-36,cy=36;
+    ctx.save();ctx.globalAlpha=.55;ctx.translate(cx,cy);ctx.rotate(ang);
+    ctx.strokeStyle='#ff44cc';ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-18,0);ctx.lineTo(18,0);
+    ctx.moveTo(10,-7);ctx.lineTo(18,0);ctx.lineTo(10,7);ctx.stroke();
+    ctx.globalAlpha=.25;ctx.fillStyle='#ff44cc';
+    ctx.beginPath();ctx.arc(0,0,22,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    ctx.save();ctx.font='8px Arial';ctx.fillStyle='rgba(255,100,200,.5)';
+    ctx.textAlign='center';ctx.fillText('ZWAARTEKRACHT',cx,cy+28);ctx.restore();
+  }
+  // Drift: arrow on side
+  if(mech==='drift'){
+    const g=ctx.createLinearGradient(W-WALL-20,H/2,W-WALL,H/2);
+    g.addColorStop(0,'rgba(255,80,30,0)');g.addColorStop(1,`rgba(255,80,30,${.2+.08*Math.sin(T*2)})`);
+    ctx.fillStyle=g;ctx.fillRect(W-WALL-20,0,20,H);
+    ctx.save();ctx.globalAlpha=.35+.1*Math.sin(T*2);
+    ctx.font='bold 11px Arial';ctx.textAlign='right';ctx.fillStyle='#ff6633';
+    ctx.fillText('&#8594;',W-WALL-4,H/2);ctx.restore();
+  }
+  // Obstacles (level 1): draw static asteroid visuals
+  if(mech==='obstacles'){
+    obstacles.forEach(ob=>{
+      drawBodyAsteroid(ctx,ob.position.x,ob.position.y,ob.circleRadius,ob.angle);
+      // glow rim
+      const g=ctx.createRadialGradient(ob.position.x,ob.position.y,ob.circleRadius*.8,ob.position.x,ob.position.y,ob.circleRadius*1.5);
+      g.addColorStop(0,'rgba(180,140,80,.1)');g.addColorStop(1,'rgba(140,100,40,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(ob.position.x,ob.position.y,ob.circleRadius*1.5,0,Math.PI*2);ctx.fill();
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  DROP & GAME OVER
+// ═══════════════════════════════════════════════════
 function drop(){
-    if(!canDrop||dead) return;
-    addBall(clampX(mouseX,cur),AIM_Y,cur,false);
-    cur=nxt; nxt=rndLvl(); drawPreview();
-    canDrop=false;
-    setTimeout(()=>{ if(!dead) canDrop=true; },DROP_MS);
+  if(!canDrop||dead)return;
+  const x=clampX(mouseX,cur);
+  addBall(x,AIM_Y,cur,false);
+  cur=nxt;nxt=rndLvl();drawPreview();
+  canDrop=false;
+  setTimeout(()=>{if(!dead)canDrop=true;},DROP_MS);
 }
-
 function checkDead(){
-    for(const b of balls){
-        if(b.fresh) continue;
-        if(b.position.y-COSMOS[b.bl].r<DANGER_Y&&Math.hypot(b.velocity.x,b.velocity.y)<1.15){
-            dead=true; canDrop=false;
-            if(score>hs){ hs=score; localStorage.setItem('cosmicHS',hs); document.getElementById('hsEl').textContent='BEST: '+hs; }
-            document.getElementById('goScore').textContent=score;
-            document.getElementById('goPanel').style.display='block';
-            return;
-        }
+  for(const b of balls){
+    if(b.fresh)continue;
+    if(b.position.y-COSMOS[b.bl].r<DANGER_Y&&Math.hypot(b.velocity.x,b.velocity.y)<1.15){
+      dead=true;canDrop=false;
+      if(score>hs){hs=score;localStorage.setItem('cosmicHS5',hs);elHsc().textContent='BEST: '+hs;}
+      elGoFinal().textContent=score;elGoPanel().style.display='block';return;
     }
+  }
+}
+function clearGame(){
+  if(engine){World.clear(world,false);Engine.clear(engine);}
+  balls=[];obstacles=[];particles=[];texts=[];rings=[];
+  score=0;dead=false;canDrop=true;combo=0;shakeF=0;bloom=0;
+  solarTimer=0;solarWarn=false;solarActive=false;
+  gravAngle=0;gravTargetAngle=0;gravChangeTmr=0;
+  mergingSet.clear();clearTimeout(comboTmr);
+  elSco().textContent='0';elCmb().textContent='';elGoPanel().style.display='none';
+}
+function goSelect(){
+  clearGame();gameState='select';elSb().style.display='none';
+}
+function restartLevel(){
+  clearGame();
+  const lv=LEVELS[activeLvl];
+  const badge=elBadge();badge.textContent=`Level ${activeLvl+1}: ${lv.name}`;
+  badge.style.background=lv.dark;badge.style.color=lv.color;
+  setupEngine();cur=rndLvl();nxt=rndLvl();drawPreview();
+  elGoPanel().style.display='none';
+}
+function startLevel(idx){
+  activeLvl=idx;clearGame();gameState='play';
+  elSb().style.display='block';
+  const lv=LEVELS[activeLvl];
+  const badge=elBadge();badge.textContent=`Level ${idx+1}: ${lv.name}`;
+  badge.style.background=lv.dark;badge.style.color=lv.color;
+  setupEngine();cur=rndLvl();nxt=rndLvl();drawPreview();
 }
 
-function restartGame(){
-    World.clear(world); Engine.clear(world);
-    balls=[]; particles=[]; texts=[]; rings=[];
-    score=0; dead=false; canDrop=true; combo=0; shakeF=0;
-    mergingSet.clear(); clearTimeout(comboTmr);
-    document.getElementById('scoreEl').textContent='0';
-    document.getElementById('comboEl').textContent='';
-    document.getElementById('goPanel').style.display='none';
-    setupEngine(); cur=rndLvl(); nxt=rndLvl(); drawPreview();
-}
-
-// ── Preview ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+//  PREVIEW
+// ═══════════════════════════════════════════════════
 function drawPreview(){
-    const pc=document.getElementById('previewCanvas');
-    const p=pc.getContext('2d');
-    p.clearRect(0,0,70,70);
-    p.fillStyle='#020818'; p.fillRect(0,0,70,70);
-    p.save(); p.translate(35,35); p.restore();
-    drawBody(p,35,35,nxt,0,0,0);
-    document.getElementById('nextName').textContent=COSMOS[nxt].name;
+  const p=document.getElementById('prvC');
+  pCtx=p.getContext('2d');
+  pCtx.clearRect(0,0,68,68);
+  pCtx.fillStyle='#020818';pCtx.fillRect(0,0,68,68);
+  drawCosmic(pCtx,34,34,nxt,0,0,0);
+  elNxtName().textContent=COSMOS[nxt].name;
 }
 
-// ── Render ───────────────────────────────────────────────────────────────────
-function render(){
-    ctx.clearRect(0,0,W,H);
-    let sx=0,sy=0;
-    if(shakeF>0){ sx=(Math.random()-.5)*shakeA*2; sy=(Math.random()-.5)*shakeA*2; shakeF--; ctx.save(); ctx.translate(sx,sy); }
+// ═══════════════════════════════════════════════════
+//  LEVEL SELECT SCREEN
+// ═══════════════════════════════════════════════════
+function drawSelectScreen(){
+  // animated bg (void style)
+  bgVoid(ctx);drawStars(ctx);drawDust(ctx);
 
-    ctx.drawImage(bgCanvas,0,0);
-    // twinkling
-    bgStars.forEach(s=>{
-        const tw=.38+.62*Math.abs(Math.sin(T*s.ts+s.to));
-        ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
-        ctx.fillStyle=`rgba(255,255,255,${s.b*tw*.92})`; ctx.fill();
-    });
-    // ambient dust
-    dust.forEach(d=>{
-        d.x+=d.vx; d.y+=d.vy;
-        if(d.y>H) d.y=0; if(d.x<0) d.x=W; if(d.x>W) d.x=0;
-        ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2);
-        ctx.fillStyle=d.blue?`rgba(128,128,255,${d.a})`:`rgba(255,165,95,${d.a})`; ctx.fill();
-    });
-    // walls
-    ctx.fillStyle='rgba(4,7,16,.96)';
-    ctx.fillRect(0,0,WALL,H); ctx.fillRect(W-WALL,0,WALL,H); ctx.fillRect(0,H-WALL,W,WALL);
-    ctx.strokeStyle='rgba(22,40,90,.8)'; ctx.lineWidth=1; ctx.strokeRect(.5,.5,W-1,H-1);
-    // danger line
-    ctx.save(); ctx.strokeStyle='rgba(248,81,73,.28)'; ctx.lineWidth=1; ctx.setLineDash([5,7]);
-    ctx.beginPath(); ctx.moveTo(WALL,DANGER_Y); ctx.lineTo(W-WALL,DANGER_Y); ctx.stroke(); ctx.restore();
-    // rings
-    for(let i=rings.length-1;i>=0;i--){
-        const rg=rings[i]; rg.r+=(rg.maxR-rg.r)*.15; rg.a-=.042;
-        if(rg.a<=0){ rings.splice(i,1); continue; }
-        ctx.save(); ctx.globalAlpha=rg.a; ctx.strokeStyle=rg.color; ctx.lineWidth=2.5;
-        ctx.beginPath(); ctx.arc(rg.x,rg.y,rg.r,0,Math.PI*2); ctx.stroke(); ctx.restore();
+  // title
+  ctx.save();
+  ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#8899cc';ctx.shadowColor='rgba(100,150,255,.6)';ctx.shadowBlur=18;
+  ctx.fillText('COSMIC MERGE',W/2,38);ctx.restore();
+  ctx.save();ctx.font='10px Arial';ctx.textAlign='center';ctx.fillStyle='#334';
+  ctx.fillText('KIES EEN LEVEL',W/2,62);ctx.restore();
+
+  const cardX=18,cardW=W-36,cardH=72,startY=80,gap=8;
+  LEVELS.forEach((lv,i)=>{
+    const y=startY+i*(cardH+gap);
+    const hov=hovCard===i;
+    const alpha=hov?.95:.75;
+
+    // card bg
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    const bg=ctx.createLinearGradient(cardX,y,cardX+cardW,y+cardH);
+    bg.addColorStop(0,hov?`rgba(20,25,50,.98)`:'rgba(12,15,30,.92)');
+    bg.addColorStop(1,'rgba(8,10,22,.88)');
+    ctx.fillStyle=bg;
+    ctx.beginPath();ctx.roundRect(cardX,y,cardW,cardH,8);ctx.fill();
+    // border
+    ctx.strokeStyle=hov?lv.color:'rgba(30,40,70,.8)';
+    ctx.lineWidth=hov?1.5:1;ctx.stroke();
+    ctx.restore();
+
+    // color accent bar on left
+    ctx.save();
+    const barG=ctx.createLinearGradient(cardX,y,cardX,y+cardH);
+    barG.addColorStop(0,lv.color);barG.addColorStop(1,lv.dark);
+    ctx.fillStyle=barG;ctx.globalAlpha=hov?.9:.6;
+    ctx.beginPath();ctx.roundRect(cardX,y,4,cardH,2);ctx.fill();
+    ctx.restore();
+
+    // level number circle
+    ctx.save();ctx.globalAlpha=hov?1:.8;
+    ctx.fillStyle=lv.dark;
+    ctx.beginPath();ctx.arc(cardX+22,y+cardH/2,16,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=lv.color;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.font='bold 13px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=lv.color;ctx.fillText(i+1,cardX+22,y+cardH/2);
+    ctx.restore();
+
+    // icon
+    ctx.save();ctx.globalAlpha=hov?.7:.4;
+    ctx.font='18px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.fillStyle=lv.color;
+    ctx.fillText(lv.icon,cardX+45,y+cardH/2-6);
+    ctx.restore();
+
+    // level name
+    ctx.save();ctx.globalAlpha=hov?1:.85;
+    ctx.font=`bold 13px Arial`;ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.fillStyle=hov?'#e8f0ff':'#9aaabb';
+    ctx.fillText(lv.name,cardX+70,y+22);
+    ctx.restore();
+
+    // sub description
+    ctx.save();ctx.globalAlpha=hov?.7:.4;
+    ctx.font='10px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.fillStyle='#667788';
+    ctx.fillText(lv.sub,cardX+70,y+42);
+    ctx.restore();
+
+    // score multiplier badge
+    ctx.save();ctx.globalAlpha=hov?.8:.5;
+    const mulTxt=`\xd7${lv.mul.toFixed(1)}`;
+    ctx.font='bold 10px Arial';ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.fillStyle=lv.color;
+    ctx.fillText(mulTxt,cardX+cardW-12,y+22);
+    ctx.globalAlpha=hov?.4:.2;ctx.fillStyle=lv.color;
+    ctx.font='8px Arial';ctx.fillText('SCORE',cardX+cardW-12,y+36);
+    ctx.restore();
+
+    // play arrow on hover
+    if(hov){
+      ctx.save();ctx.globalAlpha=.7;
+      ctx.font='bold 14px Arial';ctx.textAlign='right';ctx.textBaseline='middle';
+      ctx.fillStyle='#ffffff';ctx.shadowColor=lv.color;ctx.shadowBlur=8;
+      ctx.fillText('PLAY ▶',cardX+cardW-12,y+55);
+      ctx.restore();
     }
-    // aim
-    if(canDrop&&!dead){
-        const ax=clampX(mouseX,cur), r=COSMOS[cur].r;
-        ctx.save(); ctx.strokeStyle='rgba(100,155,255,.1)'; ctx.lineWidth=1; ctx.setLineDash([3,9]);
-        ctx.beginPath(); ctx.moveTo(ax,AIM_Y+r); ctx.lineTo(ax,H-WALL); ctx.stroke(); ctx.restore();
-        drawBody(ctx,ax,AIM_Y,cur,0,0,0);
-    }
-    // black hole warp visual
-    for(const bh of balls){
-        if(bh.bl!==10) continue;
-        const wg=ctx.createRadialGradient(bh.position.x,bh.position.y,COSMOS[10].r,bh.position.x,bh.position.y,240);
-        wg.addColorStop(0,'rgba(0,0,0,.12)'); wg.addColorStop(1,'rgba(0,0,0,0)');
-        ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(bh.position.x,bh.position.y,240,0,Math.PI*2); ctx.fill();
-    }
-    // balls
-    for(const b of balls){
-        const age=performance.now()-b.born;
-        const pop=b.mg?1:(age<200?1+.15*Math.sin((age/200)*Math.PI):1);
-        if(pop!==1){ ctx.save(); ctx.translate(b.position.x,b.position.y); ctx.scale(pop,pop); ctx.translate(-b.position.x,-b.position.y); }
-        drawBody(ctx,b.position.x,b.position.y,b.bl,b.angle,b.velocity.x,b.velocity.y);
-        if(pop!==1) ctx.restore();
-        if(b.fresh&&b.position.y-COSMOS[b.bl].r>DANGER_Y) b.fresh=false;
-    }
-    // star wind particles (emitted here)
-    for(const b of balls){
-        if(b.bl!==8) continue;
-        if(Math.random()<.45){
-            const a=Math.random()*Math.PI*2, r=COSMOS[8].r;
-            particles.push({x:b.position.x+Math.cos(a)*r,y:b.position.y+Math.sin(a)*r,
-                vx:Math.cos(a)*1.8,vy:Math.sin(a)*1.8-.5,r:1.5,a:.85,color:'#ffdd88',decay:.04});
-        }
-    }
-    // particles
-    for(let i=particles.length-1;i>=0;i--){
-        const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=.11; p.vx*=.96; p.vy*=.96; p.a-=p.decay;
-        if(p.a<=0){ particles.splice(i,1); continue; }
-        ctx.save(); ctx.globalAlpha=p.a; ctx.fillStyle=p.color;
-        ctx.shadowColor=p.color; ctx.shadowBlur=5;
-        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); ctx.restore();
-    }
-    // float texts
-    for(let i=texts.length-1;i>=0;i--){
-        const ft=texts[i]; ft.y+=ft.vy; ft.vy*=.93; ft.a-=.017;
-        if(ft.a<=0){ texts.splice(i,1); continue; }
-        ctx.save(); ctx.globalAlpha=ft.a;
-        ctx.font=`bold ${ft.big?22:16}px Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.fillStyle='#fff'; ctx.shadowColor=ft.big?'#ffcc44':'#88aaff'; ctx.shadowBlur=14;
-        ctx.fillText(ft.txt,ft.x,ft.y); ctx.restore();
-    }
-    if(dead){ ctx.fillStyle='rgba(0,0,4,.55)'; ctx.fillRect(0,0,W,H); }
-    if(shakeF>0||(sx||sy)) ctx.restore();
+  });
+
+  // bottom hint
+  ctx.save();ctx.font='9px Arial';ctx.textAlign='center';
+  ctx.fillStyle='rgba(50,60,80,.6)';ctx.fillText('klik op een level om te starten',W/2,H-12);
+  ctx.restore();
 }
 
-// ── Loop ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+//  MAIN GAME RENDER
+// ═══════════════════════════════════════════════════
+function renderGame(){
+  ctx.clearRect(0,0,W,H);
+  let sx=0,sy=0;
+  if(shakeF>0){sx=(Math.random()-.5)*shakeA*2;sy=(Math.random()-.5)*shakeA*2;shakeF--;ctx.save();ctx.translate(sx,sy);}
+
+  drawLevelBg(ctx);
+  drawStars(ctx);
+  drawDust(ctx);
+
+  // walls
+  ctx.fillStyle='rgba(4,6,14,.96)';
+  ctx.fillRect(0,0,WALL,H);ctx.fillRect(W-WALL,0,WALL,H);ctx.fillRect(0,H-WALL,W,WALL);
+  ctx.strokeStyle='rgba(20,35,80,.8)';ctx.lineWidth=1;ctx.strokeRect(.5,.5,W-1,H-1);
+
+  // danger line
+  ctx.save();ctx.strokeStyle='rgba(248,81,73,.3)';ctx.lineWidth=1.2;ctx.setLineDash([5,7]);
+  ctx.beginPath();ctx.moveTo(WALL,DANGER_Y);ctx.lineTo(W-WALL,DANGER_Y);ctx.stroke();ctx.restore();
+
+  // level mechanic overlays (obstacles drawn here too)
+  drawMechanicOverlay();
+
+  // merge rings
+  for(let i=rings.length-1;i>=0;i--){
+    const rg=rings[i];rg.r+=(rg.maxR-rg.r)*.15;rg.a-=.042;
+    if(rg.a<=0){rings.splice(i,1);continue;}
+    ctx.save();ctx.globalAlpha=rg.a;ctx.strokeStyle=rg.color;ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.arc(rg.x,rg.y,rg.r,0,Math.PI*2);ctx.stroke();ctx.restore();
+  }
+
+  // aim guide
+  if(canDrop&&!dead){
+    const ax=clampX(mouseX,cur),r=COSMOS[cur].r;
+    ctx.save();ctx.strokeStyle='rgba(100,155,255,.09)';ctx.lineWidth=1;ctx.setLineDash([3,9]);
+    ctx.beginPath();ctx.moveTo(ax,AIM_Y+r);ctx.lineTo(ax,H-WALL);ctx.stroke();ctx.restore();
+    drawCosmic(ctx,ax,AIM_Y,cur,0,0,0);
+  }
+
+  // black hole gravity visual
+  for(const bh of balls){
+    if(bh.bl!==10)continue;
+    const wg=ctx.createRadialGradient(bh.position.x,bh.position.y,COSMOS[10].r,bh.position.x,bh.position.y,250);
+    wg.addColorStop(0,'rgba(0,0,0,.12)');wg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=wg;ctx.beginPath();ctx.arc(bh.position.x,bh.position.y,250,0,Math.PI*2);ctx.fill();
+  }
+
+  // active balls
+  for(const b of balls){
+    const age=performance.now()-b.born;
+    const pop=b.mg?1:(age<200?1+.15*Math.sin((age/200)*Math.PI):1);
+    if(pop!==1){ctx.save();ctx.translate(b.position.x,b.position.y);ctx.scale(pop,pop);ctx.translate(-b.position.x,-b.position.y);}
+    drawCosmic(ctx,b.position.x,b.position.y,b.bl,b.angle,b.velocity.x,b.velocity.y);
+    if(pop!==1)ctx.restore();
+    if(b.fresh&&b.position.y-COSMOS[b.bl].r>DANGER_Y)b.fresh=false;
+    // star wind particles
+    if(b.bl===8&&Math.random()<.45){
+      const a=Math.random()*Math.PI*2,r=COSMOS[8].r;
+      particles.push({x:b.position.x+Math.cos(a)*r,y:b.position.y+Math.sin(a)*r,
+        vx:Math.cos(a)*1.9,vy:Math.sin(a)*1.9-.5,r:1.5,a:.85,color:'#ffdd88',decay:.04});
+    }
+  }
+
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.11;p.vx*=.96;p.vy*=.96;p.a-=p.decay;
+    if(p.a<=0){particles.splice(i,1);continue;}
+    ctx.save();ctx.globalAlpha=p.a;ctx.fillStyle=p.color;ctx.shadowColor=p.color;ctx.shadowBlur=5;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+
+  // float texts
+  for(let i=texts.length-1;i>=0;i--){
+    const ft=texts[i];ft.y+=ft.vy;ft.vy*=.93;ft.a-=.017;
+    if(ft.a<=0){texts.splice(i,1);continue;}
+    ctx.save();ctx.globalAlpha=ft.a;
+    ctx.font=`bold ${ft.big?22:16}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=ft.col||'#fff';ctx.shadowColor=ft.col||'#88aaff';ctx.shadowBlur=14;
+    ctx.fillText(ft.txt,ft.x,ft.y);ctx.restore();
+  }
+
+  // bloom flash
+  if(bloom>0){
+    ctx.save();ctx.globalAlpha=bloom*.5;ctx.fillStyle=bloomCol;
+    ctx.fillRect(0,0,W,H);ctx.restore();
+    bloom=Math.max(0,bloom-.04);
+  }
+
+  if(dead){ctx.fillStyle='rgba(0,0,4,.55)';ctx.fillRect(0,0,W,H);}
+  if(shakeF>0||(sx||sy))ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════
 function loop(){
-    T+=.016;
+  T+=.016;
+  if(gameState==='select'){
+    drawSelectScreen();
+  } else {
+    const dt=1/60;
     Engine.update(engine,1000/60);
-    blackHoleGravity();
-    if(!dead) checkDead();
-    render();
-    if(Math.round(T*60)%6===0) drawPreview();
-    requestAnimationFrame(loop);
+    applyBhGrav();
+    updateMechanics(dt);
+    if(!dead)checkDead();
+    renderGame();
+    if(Math.round(T*60)%6===0)drawPreview();
+  }
+  requestAnimationFrame(loop);
 }
 
-// ── Init ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  mouseX=e.clientX-rect.left;mouseY=e.clientY-rect.top;
+  if(gameState==='select'){
+    const cardH=72,startY=80,gap=8;
+    hovCard=-1;
+    for(let i=0;i<5;i++){
+      const y=startY+i*(cardH+gap);
+      if(mouseY>=y&&mouseY<=y+cardH){hovCard=i;break;}
+    }
+    canvas.style.cursor=hovCard>=0?'pointer':'default';
+  }
+});
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const cy=e.clientY-rect.top;
+  if(gameState==='select'){
+    const cardH=72,startY=80,gap=8;
+    for(let i=0;i<5;i++){
+      const y=startY+i*(cardH+gap);
+      if(cy>=y&&cy<=y+cardH){startLevel(i);return;}
+    }
+  } else {drop();}
+});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();mouseX=e.touches[0].clientX-canvas.getBoundingClientRect().left;
+},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  if(gameState==='play')drop();
+  else{
+    const cy=e.changedTouches[0].clientY-canvas.getBoundingClientRect().top;
+    const cardH=72,startY=80,gap=8;
+    for(let i=0;i<5;i++){
+      const y=startY+i*(cardH+gap);if(cy>=y&&cy<=y+cardH){startLevel(i);return;}
+    }
+  }
+},{passive:false});
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
 canvas=document.getElementById('gameCanvas');
-canvas.width=W; canvas.height=H;
+canvas.width=W;canvas.height=H;
 ctx=canvas.getContext('2d');
-canvas.addEventListener('mousemove',e=>{ mouseX=e.clientX-canvas.getBoundingClientRect().left; });
-canvas.addEventListener('click',drop);
-canvas.addEventListener('touchmove',e=>{ e.preventDefault(); mouseX=e.touches[0].clientX-canvas.getBoundingClientRect().left; },{passive:false});
-canvas.addEventListener('touchend',e=>{ e.preventDefault(); drop(); },{passive:false});
-buildBg(); initDust(); setupEngine();
-cur=rndLvl(); nxt=rndLvl(); drawPreview();
+elSb().style.display='none';
+initStars();initDust();initDriftRocks();
 loop();
 </script>
 </body>
