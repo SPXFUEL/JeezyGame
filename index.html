@@ -9,9 +9,9 @@ body{background:#000;display:flex;flex-direction:column;align-items:center;justi
      min-height:100vh;font-family:Arial,sans-serif;color:#fff;user-select:none;overflow:hidden}
 #wrap{display:flex;gap:14px;align-items:flex-start}
 #sb{width:122px;padding-top:2px}
-.lbl{font-size:9px;color:#334;text-transform:uppercase;letter-spacing:2px;margin-bottom:2px}
+.lbl{font-size:9px;color:#6688aa;text-transform:uppercase;letter-spacing:2px;margin-bottom:2px}
 #sco{font-size:32px;font-weight:bold;color:#b8d0ff;text-shadow:0 0 12px rgba(100,150,255,.3);margin-bottom:1px}
-#hsc{font-size:10px;color:#334;margin-bottom:10px}
+#hsc{font-size:10px;color:#556888;margin-bottom:10px}
 #cmb{font-size:18px;font-weight:bold;min-height:24px;margin-bottom:8px;color:#ffdd88;
      text-shadow:0 0 14px rgba(255,200,80,.6)}
 #nxt{background:rgba(8,12,28,.92);border:1px solid #182040;border-radius:9px;padding:9px;
@@ -83,6 +83,15 @@ const LEVELS=[
 ];
 const {Engine,Bodies,Body,World,Events}=Matter;
 
+// roundRect polyfill voor oudere browsers
+function rr(c,x,y,w,h,r){
+  c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);
+  c.quadraticCurveTo(x+w,y,x+w,y+r);c.lineTo(x+w,y+h-r);
+  c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);c.lineTo(x+r,y+h);
+  c.quadraticCurveTo(x,y+h,x,y+h-r);c.lineTo(x,y+r);
+  c.quadraticCurveTo(x,y,x+r,y);c.closePath();
+}
+
 // ═══════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════
@@ -120,8 +129,8 @@ function initStars(){
   bgStars=[];
   for(let i=0;i<260;i++){
     bgStars.push({x:Math.random()*W,y:Math.random()*H,
-      r:.3+Math.random()*(Math.random()<.05?1.5:.6),
-      b:.2+Math.random()*.8,ts:.4+Math.random()*2.2,to:Math.random()*Math.PI*2});
+      r:.5+Math.random()*(Math.random()<.06?2:.9),
+      b:.5+Math.random()*.5,ts:.4+Math.random()*2.2,to:Math.random()*Math.PI*2});
   }
 }
 function initDust(){
@@ -194,8 +203,8 @@ function drawNebula(c,cx,cy,r,colA,colB,t,seed){
 function drawAurora(c,t){
   for(let i=0;i<4;i++){
     const y=H*(.15+i*.18)+18*Math.sin(t*.18+i*1.2);
-    c.save();c.globalAlpha=.03+.015*Math.sin(t*.25+i);
-    c.strokeStyle=`hsl(${160+i*20},80%,55%)`;c.lineWidth=18+10*Math.sin(t*.12+i*1.8);
+    c.save();c.globalAlpha=.07+.04*Math.sin(t*.25+i);
+    c.strokeStyle=`hsl(${160+i*20},90%,65%)`;c.lineWidth=22+12*Math.sin(t*.12+i*1.8);
     c.beginPath();c.moveTo(0,y);
     for(let x=0;x<=W;x+=18) c.lineTo(x,y+28*Math.sin(t*.38+x*.018+i));
     c.stroke();c.restore();
@@ -205,11 +214,11 @@ function drawAurora(c,t){
 // Level 0 – The Void
 function bgVoid(c){
   const bg=c.createLinearGradient(0,0,W,H);
-  bg.addColorStop(0,'#020818');bg.addColorStop(.5,'#040c1e');bg.addColorStop(1,'#020612');
+  bg.addColorStop(0,'#060d2a');bg.addColorStop(.5,'#0a1435');bg.addColorStop(1,'#05091e');
   c.fillStyle=bg;c.fillRect(0,0,W,H);
-  drawNebula(c,W*.22,H*.32,130,'rgba(65,25,180,.16)','rgba(40,15,100,.06)',T,0);
-  drawNebula(c,W*.78,H*.62,100,'rgba(20,55,155,.14)','rgba(10,30,80,.05)',T,2.5);
-  drawNebula(c,W*.5,H*.08,80,'rgba(90,20,120,.12)','rgba(50,10,70,.04)',T,5);
+  drawNebula(c,W*.22,H*.32,150,'rgba(90,40,220,.32)','rgba(55,20,140,.12)',T,0);
+  drawNebula(c,W*.78,H*.62,120,'rgba(25,70,190,.28)','rgba(12,40,100,.1)',T,2.5);
+  drawNebula(c,W*.5,H*.08,100,'rgba(120,30,160,.24)','rgba(70,15,90,.08)',T,5);
   drawAurora(c,T);
 }
 
@@ -330,7 +339,7 @@ function drawStars(c){
   bgStars.forEach(s=>{
     const tw=.35+.65*Math.abs(Math.sin(T*s.ts+s.to));
     c.beginPath();c.arc(s.x,s.y,s.r,0,Math.PI*2);
-    c.fillStyle=`rgba(255,255,255,${s.b*tw*.9})`;c.fill();
+    c.fillStyle=`rgba(255,255,255,${s.b*tw})`;c.fill();
   });
 }
 function drawDust(c){
@@ -793,10 +802,10 @@ function drawSelectScreen(){
 
   // title
   ctx.save();
-  ctx.font='bold 22px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillStyle='#8899cc';ctx.shadowColor='rgba(100,150,255,.6)';ctx.shadowBlur=18;
+  ctx.font='bold 26px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#c0d4ff';ctx.shadowColor='rgba(120,170,255,.8)';ctx.shadowBlur=22;
   ctx.fillText('COSMIC MERGE',W/2,38);ctx.restore();
-  ctx.save();ctx.font='10px Arial';ctx.textAlign='center';ctx.fillStyle='#334';
+  ctx.save();ctx.font='11px Arial';ctx.textAlign='center';ctx.fillStyle='#6688aa';
   ctx.fillText('KIES EEN LEVEL',W/2,62);ctx.restore();
 
   const cardX=18,cardW=W-36,cardH=72,startY=80,gap=8;
@@ -809,13 +818,13 @@ function drawSelectScreen(){
     ctx.save();
     ctx.globalAlpha=alpha;
     const bg=ctx.createLinearGradient(cardX,y,cardX+cardW,y+cardH);
-    bg.addColorStop(0,hov?`rgba(20,25,50,.98)`:'rgba(12,15,30,.92)');
-    bg.addColorStop(1,'rgba(8,10,22,.88)');
+    bg.addColorStop(0,hov?`rgba(35,44,90,1)`:'rgba(22,28,60,.97)');
+    bg.addColorStop(1,hov?'rgba(25,34,75,.98)':'rgba(15,20,48,.94)');
     ctx.fillStyle=bg;
-    ctx.beginPath();ctx.roundRect(cardX,y,cardW,cardH,8);ctx.fill();
+    rr(ctx,cardX,y,cardW,cardH,8);ctx.fill();
     // border
-    ctx.strokeStyle=hov?lv.color:'rgba(30,40,70,.8)';
-    ctx.lineWidth=hov?1.5:1;ctx.stroke();
+    ctx.strokeStyle=hov?lv.color:'rgba(55,80,140,.9)';
+    ctx.lineWidth=hov?2:1;ctx.stroke();
     ctx.restore();
 
     // color accent bar on left
@@ -823,7 +832,7 @@ function drawSelectScreen(){
     const barG=ctx.createLinearGradient(cardX,y,cardX,y+cardH);
     barG.addColorStop(0,lv.color);barG.addColorStop(1,lv.dark);
     ctx.fillStyle=barG;ctx.globalAlpha=hov?.9:.6;
-    ctx.beginPath();ctx.roundRect(cardX,y,4,cardH,2);ctx.fill();
+    rr(ctx,cardX,y,4,cardH,2);ctx.fill();
     ctx.restore();
 
     // level number circle
@@ -845,14 +854,14 @@ function drawSelectScreen(){
     // level name
     ctx.save();ctx.globalAlpha=hov?1:.85;
     ctx.font=`bold 13px Arial`;ctx.textAlign='left';ctx.textBaseline='middle';
-    ctx.fillStyle=hov?'#e8f0ff':'#9aaabb';
+    ctx.fillStyle=hov?'#ffffff':'#c8daf0';
     ctx.fillText(lv.name,cardX+70,y+22);
     ctx.restore();
 
     // sub description
-    ctx.save();ctx.globalAlpha=hov?.7:.4;
+    ctx.save();ctx.globalAlpha=hov?.95:.75;
     ctx.font='10px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
-    ctx.fillStyle='#667788';
+    ctx.fillStyle=hov?'#aabfd0':'#889aaa';
     ctx.fillText(lv.sub,cardX+70,y+42);
     ctx.restore();
 
