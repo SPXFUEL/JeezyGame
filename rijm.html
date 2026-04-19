@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rijmwoorden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a0533;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+  }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ── Rijmparen database (30+ paren) ─────────────────────────
+// Elk paar: [woord1, emoji1, woord2, emoji2]
+const RHYME_PAIRS = [
+  ['KAT',   '🐱', 'MAT',   '🧺'],
+  ['BEL',   '🔔', 'VEL',   '📄'],
+  ['BOOM',  '🌳', 'ROOM',  '🍦'],
+  ['VIS',   '🐟', 'WIS',   '🗑️'],
+  ['ROOS',  '🌹', 'BOOS',  '😠'],
+  ['HUIS',  '🏠', 'MUIS',  '🐭'],
+  ['BOOT',  '⛵', 'ROOT',  '🔴'],
+  ['BEES',  '🐝', 'FEES',  '🎉'],
+  ['LAMP',  '💡', 'KAMP',  '⛺'],
+  ['PEER',  '🍐', 'BEER',  '🐻'],
+  ['VLIEG', '🪰', 'WIEG',  '🛏️'],
+  ['STAR',  '⭐', 'BAR',   '🍫'],
+  ['DOOS',  '📦', 'GOOS',  '🪿'],
+  ['BAL',   '⚽', 'DAL',   '🏔️'],
+  ['RIET',  '🌾', 'DIET',  '🥗'],
+  ['NOOT',  '🥜', 'BOOT',  '⛵'],
+  ['ZON',   '☀️', 'TON',   '🪣'],
+  ['MAN',   '👨', 'BAN',   '🚫'],
+  ['BOS',   '🌲', 'VOS',   '🦊'],
+  ['FEE',   '🧚', 'BEE',   '🐝'],
+  ['SPIN',  '🕷️', 'WIN',   '🏆'],
+  ['KIP',   '🐔', 'LIP',   '👄'],
+  ['OOR',   '👂', 'SPOOR', '🚂'],
+  ['RING',  '💍', 'KING',  '👑'],
+  ['DAK',   '🏠', 'ZAK',   '👜'],
+  ['LIED',  '🎵', 'RIET',  '🌾'],
+  ['PUT',   '🪣', 'HUT',   '🏚️'],
+  ['MAAN',  '🌙', 'BAAN',  '🛤️'],
+  ['WOL',   '🐑', 'POL',   '🌿'],
+  ['STEEN', '🪨', 'BEEN',  '🦴'],
+  ['GEIT',  '🐐', 'TREIT', '😈'],
+  ['VOS',   '🦊', 'DOS',   '💻'],
+];
+
+// Afleidingswoorden (rijmen NIET op meeste dingen)
+const DISTRACTORS = [
+  ['APPEL', '🍎'], ['TAFEL', '🍽️'], ['FIETS', '🚲'],
+  ['VOGEL', '🐦'], ['WATER', '💧'], ['BLOEM', '🌸'],
+  ['BOEK',  '📚'], ['SLANG', '🐍'], ['TREIN', '🚂'],
+  ['PIZZA', '🍕'], ['ROBOT', '🤖'], ['DRAAK', '🐲'],
+  ['PIANO', '🎹'], ['ZEEPBEL','🫧'], ['KOEK',  '🍪'],
+  ['KLEUR', '🎨'], ['DEUR',  '🚪'], ['REGEN', '🌧️'],
+  ['EMMER', '🪣'], ['PAPIER','📄'], ['KAARS', '🕯️'],
+  ['GIRAF', '🦒'], ['PIANO', '🎹'], ['STOEL', '🪑'],
+];
+
+// ── State ──────────────────────────────────────────────────
+const G = {
+  screen: 'start',
+  round: 0,
+  maxRounds: 10,
+  score: 0,
+  targetWord: '',
+  targetEmoji: '',
+  rhymeWord: '',
+  rhymeEmoji: '',
+  options: [],       // [{word, emoji, isCorrect}]
+  chosen: null,
+  buttons: [],
+  particles: [],
+  bounce: 0,
+  bounceDir: 1,
+  usedPairs: [],
+  feedbackFace: '',
+  bgHue: 280,
+};
+
+// ── Rijmronde genereren ───────────────────────────────────
+function pickNewRound() {
+  G.chosen = null;
+  G.feedbackFace = '';
+  G.particles = [];
+
+  // Kies een ongebruikt paar
+  let available = RHYME_PAIRS.filter(function(p) {
+    return !G.usedPairs.includes(p[0]);
+  });
+  if (available.length === 0) {
+    G.usedPairs = [];
+    available = RHYME_PAIRS.slice();
+  }
+
+  const pair = available[Math.floor(Math.random() * available.length)];
+  G.usedPairs.push(pair[0]);
+
+  // 50% kans: toon woord1, antwoord is woord2 OF vice versa
+  const flip = Math.random() < 0.5;
+  if (flip) {
+    G.targetWord  = pair[0]; G.targetEmoji  = pair[1];
+    G.rhymeWord   = pair[2]; G.rhymeEmoji   = pair[3];
+  } else {
+    G.targetWord  = pair[2]; G.targetEmoji  = pair[3];
+    G.rhymeWord   = pair[0]; G.rhymeEmoji   = pair[1];
+  }
+
+  // Genereer 2 distractors die NIET rijmen op targetWord
+  const shuffledDist = [...DISTRACTORS].sort(function() { return Math.random() - 0.5; });
+  const dists = shuffledDist.slice(0, 2);
+
+  // Bouw opties array
+  const opts = [
+    { word: G.rhymeWord, emoji: G.rhymeEmoji, isCorrect: true },
+    { word: dists[0][0], emoji: dists[0][1], isCorrect: false },
+    { word: dists[1][0], emoji: dists[1][1], isCorrect: false },
+  ];
+
+  // Shuffle opties
+  for (let i = opts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+
+  G.options = opts;
+}
+
+// ── Particle systeem ──────────────────────────────────────
+function addConfetti(x, y) {
+  const colors = ['#ff4081','#ffeb3b','#00e5ff','#69f0ae','#ff6e40','#e040fb'];
+  for (let i = 0; i < 30; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    G.particles.push({
+      x, y,
+      vx: Math.cos(ang) * speed,
+      vy: Math.sin(ang) * speed - 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 4 + Math.random() * 6,
+      life: 1,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.2
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = G.particles.length - 1; i >= 0; i--) {
+    const p = G.particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;  // zwaartekracht
+    p.rot += p.rotSpeed;
+    p.life -= 0.018;
+    if (p.life <= 0) G.particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  G.particles.forEach(function(p) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ── Tekenhulpen ───────────────────────────────────────────
+function rr(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+
+function drawBG() {
+  G.bgHue = (G.bgHue + 0.1) % 360;
+  const bg = ctx.createLinearGradient(0, 0, 0, 700);
+  bg.addColorStop(0, 'hsl(' + G.bgHue + ',60%,15%)');
+  bg.addColorStop(1, 'hsl(' + ((G.bgHue + 40) % 360) + ',60%,10%)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 390, 700);
+
+  // Decoratieve cirkels achtergrond
+  for (let i = 0; i < 6; i++) {
+    const cx = 40 + i * 62;
+    const cy = 650 + Math.sin(Date.now() / 1000 + i) * 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fill();
+  }
+}
+
+// ── Startscherm ───────────────────────────────────────────
+function drawStart() {
+  drawBG();
+
+  // Titel
+  rr(20, 60, 350, 100, 20, '#7b1fa2', '#4a148c', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('🎵 Rijmwoorden', 195, 120);
+
+  // Preview woorden
+  ctx.font = '70px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('🐱', 120, 280);
+  ctx.fillText('🧺', 270, 280);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText('KAT', 120, 320);
+  ctx.fillText('MAT', 270, 320);
+
+  // Rijmstreep
+  rr(150, 285, 90, 6, 3, '#ff4081', null);
+
+  ctx.fillStyle = '#ffe082';
+  ctx.font = '22px Arial';
+  ctx.fillText('rijmt op', 195, 286);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px Arial';
+  ctx.fillText('Welk woord rijmt?', 195, 370);
+  ctx.fillText('10 rondes — doe je best!', 195, 398);
+
+  rr(95, 460, 200, 85, 20, '#e91e63', '#880e4f', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 30px Arial';
+  ctx.fillText('SPELEN! 🎶', 195, 510);
+
+  G.buttons = [{ x: 95, y: 460, w: 200, h: 85, action: 'start' }];
+}
+
+// ── Speel scherm ──────────────────────────────────────────
+function drawPlay() {
+  drawBG();
+  updateParticles();
+
+  G.bounce += 0.05 * G.bounceDir;
+  if (Math.abs(G.bounce) > 0.5) G.bounceDir *= -1;
+
+  // Score balk
+  rr(10, 10, 370, 50, 12, 'rgba(255,255,255,0.15)', null);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('⭐ ' + G.score, 30, 43);
+  ctx.textAlign = 'right';
+  ctx.fillText('Ronde ' + (G.round + 1) + '/' + G.maxRounds, 380, 43);
+
+  // Voortgangsbalkjes
+  const dotY = 56;
+  for (let i = 0; i < G.maxRounds; i++) {
+    const dotX = 25 + i * 34;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 6, 0, Math.PI * 2);
+    if (i < G.round) ctx.fillStyle = '#69f0ae';
+    else if (i === G.round) ctx.fillStyle = '#fff';
+    else ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fill();
+  }
+
+  // Target woord kaart (met bounce)
+  const cardY = 90 + G.bounce * 4;
+  rr(60, cardY, 270, 160, 20, 'rgba(255,255,255,0.18)', '#fff', 2);
+
+  // Vraag label
+  ctx.fillStyle = '#ffe082';
+  ctx.font = 'bold 18px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Welk woord rijmt op...', 195, cardY + 28);
+
+  // Emoji groot
+  ctx.font = '70px Arial';
+  ctx.fillText(G.targetEmoji, 195, cardY + 105);
+
+  // Woord
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 42px Arial';
+  ctx.fillText(G.targetWord, 195, cardY + 150);
+
+  // Opties
+  const optY = 290;
+  const optW = 108;
+  const optH = 130;
+  const optGap = 10;
+  const totalW = 3 * optW + 2 * optGap;
+  const optStartX = (390 - totalW) / 2;
+
+  G.buttons = [];
+
+  G.options.forEach(function(opt, i) {
+    const bx = optStartX + i * (optW + optGap);
+    let bg = 'rgba(103,58,183,0.7)';
+    let border = '#9c27b0';
+
+    if (G.chosen !== null) {
+      if (opt.isCorrect) {
+        bg = '#2e7d32'; border = '#1b5e20';
+      } else if (!opt.isCorrect && G.chosen === i) {
+        bg = '#c62828'; border = '#b71c1c';
+      } else {
+        bg = 'rgba(103,58,183,0.3)'; border = 'rgba(156,39,176,0.3)';
+      }
+    }
+
+    rr(bx, optY, optW, optH, 16, bg, border, 3);
+
+    // Emoji
+    ctx.font = '44px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(opt.emoji, bx + optW / 2, optY + 62);
+
+    // Woord
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px Arial';
+    ctx.fillText(opt.word, bx + optW / 2, optY + optH - 12);
+
+    if (G.chosen === null) {
+      G.buttons.push({ x: bx, y: optY, w: optW, h: optH, action: 'answer', index: i });
+    }
+  });
+
+  // Feedback
+  if (G.chosen !== null) {
+    const correct = G.options[G.chosen] && G.options[G.chosen].isCorrect;
+
+    ctx.font = '70px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(correct ? '😄' : '😅', 195, 475);
+
+    ctx.fillStyle = correct ? '#69f0ae' : '#ff8a80';
+    ctx.font = 'bold 24px Arial';
+    if (correct) {
+      ctx.fillText('Super! Ze rijmen! 🎵', 195, 515);
+    } else {
+      const ans = G.options.find(function(o) { return o.isCorrect; });
+      ctx.fillText('"' + G.targetWord + '" rijmt op "' + ans.word + '"', 195, 515);
+    }
+
+    // Volgende knop
+    rr(100, 540, 190, 70, 16, '#ff4081', '#c2185b', 3);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText('Verder ➜', 195, 582);
+    G.buttons.push({ x: 100, y: 540, w: 190, h: 70, action: 'next' });
+  }
+
+  drawParticles();
+}
+
+// ── Eind scherm ───────────────────────────────────────────
+function drawResult() {
+  drawBG();
+  updateParticles();
+
+  // Confetti stroom
+  if (G.score >= 7 && Math.random() < 0.3) {
+    addConfetti(Math.random() * 390, 0);
+  }
+
+  const pct = G.score / G.maxRounds;
+  const emoji = pct >= 0.9 ? '🏆' : pct >= 0.6 ? '🌟' : '💪';
+  const msg   = pct >= 0.9 ? 'Rijmkampioen!' : pct >= 0.6 ? 'Goed gedaan!' : 'Oefening baart kunst!';
+
+  ctx.font = '90px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(emoji, 195, 200);
+
+  rr(20, 220, 350, 120, 20, 'rgba(255,255,255,0.15)', null);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px Arial';
+  ctx.fillText(msg, 195, 275);
+  ctx.fillStyle = '#ffe082';
+  ctx.font = 'bold 30px Arial';
+  ctx.fillText(G.score + ' / ' + G.maxRounds + ' goed', 195, 320);
+
+  // Sterren
+  ctx.font = '56px Arial';
+  const stars = pct >= 0.9 ? 3 : pct >= 0.6 ? 2 : 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.globalAlpha = i < stars ? 1 : 0.2;
+    ctx.fillText('⭐', 100 + i * 100, 410);
+  }
+  ctx.globalAlpha = 1;
+
+  // Rijmpaar tonen als decoratie
+  ctx.font = '36px Arial';
+  ctx.fillText('🐱 = 🧺', 195, 480);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = '16px Arial';
+  ctx.fillText('KAT rijmt op MAT', 195, 510);
+
+  // Knoppen
+  G.buttons = [];
+  rr(95, 545, 200, 80, 20, '#7b1fa2', '#4a148c', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px Arial';
+  ctx.fillText('Opnieuw! 🎵', 195, 592);
+  G.buttons.push({ x: 95, y: 545, w: 200, h: 80, action: 'restart' });
+
+  drawParticles();
+}
+
+// ── Game loop ──────────────────────────────────────────────
+function loop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (G.screen === 'start')  drawStart();
+  else if (G.screen === 'play')   drawPlay();
+  else if (G.screen === 'result') drawResult();
+
+  requestAnimationFrame(loop);
+}
+
+// ── Input ──────────────────────────────────────────────────
+function handleTap(x, y) {
+  for (let i = 0; i < G.buttons.length; i++) {
+    const b = G.buttons[i];
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+      handleAction(b.action, b.index);
+      return;
+    }
+  }
+}
+
+function handleAction(action, index) {
+  if (action === 'start') {
+    G.screen = 'play';
+    G.score = 0;
+    G.round = 0;
+    G.usedPairs = [];
+    pickNewRound();
+  } else if (action === 'answer') {
+    if (G.chosen !== null) return;
+    G.chosen = index;
+    if (G.options[index].isCorrect) {
+      G.score++;
+      // Confetti bij correct antwoord
+      const optW = 108;
+      const optGap = 10;
+      const totalW = 3 * optW + 2 * optGap;
+      const optStartX = (390 - totalW) / 2;
+      const bx = optStartX + index * (optW + optGap) + optW / 2;
+      addConfetti(bx, 355);
+      G.feedbackFace = '😄';
+    } else {
+      G.feedbackFace = '😅';
+    }
+  } else if (action === 'next') {
+    G.round++;
+    if (G.round >= G.maxRounds) {
+      G.screen = 'result';
+      if (G.score >= 7) addConfetti(195, 200);
+    } else {
+      pickNewRound();
+    }
+  } else if (action === 'restart') {
+    G.screen = 'start';
+    G.score = 0;
+    G.round = 0;
+    G.usedPairs = [];
+    G.particles = [];
+  }
+}
+
+canvas.ontouchstart = function(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const touch = e.changedTouches[0];
+  handleTap(
+    (touch.clientX - rect.left) * scaleX,
+    (touch.clientY - rect.top) * scaleY
+  );
+};
+
+canvas.onclick = function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  handleTap(
+    (e.clientX - rect.left) * scaleX,
+    (e.clientY - rect.top) * scaleY
+  );
+};
+
+// ── Start ──────────────────────────────────────────────────
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
