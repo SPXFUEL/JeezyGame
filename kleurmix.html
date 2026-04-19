@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Kleurmix Lab – Pip de Robot</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    touch-action: manipulation;
+  }
+  #gameCanvas {
+    display: block;
+    cursor: pointer;
+    border-radius: 16px;
+    box-shadow: 0 0 60px rgba(100,200,255,0.3);
+    image-rendering: pixelated;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+// ============================================================
+//  KLEURMIX LAB – complete vanilla JS / Canvas game
+// ============================================================
+
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+
+// ── Responsive sizing ───────────────────────────────────────
+const BASE_W = 800, BASE_H = 600;
+const DPR = Math.min(window.devicePixelRatio || 1, 3);
+let scale = 1;
+function resize() {
+  const maxW = Math.min(window.innerWidth,  window.screen.width);
+  const maxH = Math.min(window.innerHeight, window.screen.height);
+  scale = Math.min(maxW / BASE_W, maxH / BASE_H, 1.5);
+  canvas.width  = Math.floor(BASE_W * scale * DPR);
+  canvas.height = Math.floor(BASE_H * scale * DPR);
+  canvas.style.width  = Math.floor(BASE_W * scale) + 'px';
+  canvas.style.height = Math.floor(BASE_H * scale) + 'px';
+  ctx.scale(DPR, DPR);
+}
+resize();
+window.addEventListener('resize', () => { resize(); });
+
+// ── Colour definitions ──────────────────────────────────────
+const PAINTS = [
+  { id:'red',    label:'Rood',   hex:'#E63946', x:90,  y:440 },
+  { id:'blue',   label:'Blauw',  hex:'#3A86FF', x:210, y:440 },
+  { id:'yellow', label:'Geel',   hex:'#FFD60A', x:330, y:440 },
+  { id:'white',  label:'Wit',    hex:'#F8F9FA', x:450, y:440 },
+  { id:'black',  label:'Zwart',  hex:'#212529', x:570, y:440 },
+];
+
+// mix(a,b) → result-id  (order-independent)
+const MIXES = {
+  'red+blue':    { id:'purple',  label:'Paars',    hex:'#9B5DE5', emoji:'🟣' },
+  'red+yellow':  { id:'orange',  label:'Oranje',   hex:'#FF6B35', emoji:'🟠' },
+  'blue+yellow': { id:'green',   label:'Groen',    hex:'#52B788', emoji:'🟢' },
+  'red+white':   { id:'pink',    label:'Roze',     hex:'#FF8FAB', emoji:'🩷' },
+  'blue+white':  { id:'lightblue', label:'Lichtblauw', hex:'#90E0EF', emoji:'🔵' },
+  'yellow+white':{ id:'cream',   label:'Crème',    hex:'#FFF3B0', emoji:'🟡' },
+  'red+black':   { id:'darkred', label:'Donkerrood', hex:'#9D0208', emoji:'🔴' },
+  'blue+black':  { id:'navy',    label:'Marine',   hex:'#023E8A', emoji:'🔷' },
+  'yellow+black':{ id:'olive',   label:'Olijf',    hex:'#606C38', emoji:'🫒' },
+  'red+blue+yellow': { id:'brown', label:'Bruin',  hex:'#885A36', emoji:'🟤' },
+  // orange = red+yellow already defined
+  'orange+white':{ id:'peach',   label:'Perzik',   hex:'#FFBA93', emoji:'🍑' },
+  'green+yellow':{ id:'lime',    label:'Limoen',   hex:'#B5E61D', emoji:'💚' },
+  'purple+red':  { id:'magenta', label:'Magenta',  hex:'#C9184A', emoji:'💗' },
+  'green+blue':  { id:'teal',    label:'Teal',     hex:'#0096C7', emoji:'🩵' },
+  'white+black': { id:'grey',    label:'Grijs',    hex:'#6C757D', emoji:'⬜' },
+};
+
+// ── Levels (sorted easy → hard) ─────────────────────────────
+const LEVELS = [
+  { target:'purple',    needs:['red','blue'],    hint:'Probeer een warme én koele kleur!' },
+  { target:'orange',    needs:['red','yellow'],  hint:'Twee warme kleuren doen het!' },
+  { target:'green',     needs:['blue','yellow'], hint:'Koud + warm = fris groen!' },
+  { target:'pink',      needs:['red','white'],   hint:'Maak rood wat zachter!' },
+  { target:'lightblue', needs:['blue','white'],  hint:'Blauw wordt helderder met wit!' },
+  { target:'cream',     needs:['yellow','white'],hint:'Geel + wit = zachte kleur!' },
+  { target:'grey',      needs:['white','black'], hint:'Licht en donker samen!' },
+  { target:'darkred',   needs:['red','black'],   hint:'Rood wordt donkerder met zwart!' },
+  { target:'navy',      needs:['blue','black'],  hint:'Blauw + donker = diepblauw!' },
+  { target:'olive',     needs:['yellow','black'],hint:'Geel + een beetje donker!' },
+  { target:'peach',     needs:['red','yellow','white'], hint:'Oranje (rood+geel) + wit!' },
+  { target:'lime',      needs:['blue','yellow'], hint:'Een beetje meer geel dan groen!' },
+  { target:'teal',      needs:['blue','yellow'], hint:'Blauw met een groene tint!' },
+  { target:'magenta',   needs:['red','blue'],    hint:'Meer rood dan voor paars!' },
+  { target:'brown',     needs:['red','blue','yellow'], hint:'Alle drie de basiskleuren samen!' },
+];
+
+// Look-up helpers
+function getMixKey(ids) {
+  // Sort the ids to make order-independent
+  const sorted = [...ids].sort();
+  return sorted.join('+');
+}
+function getMixResult(ids) {
+  const key = getMixKey(ids);
+  return MIXES[key] || null;
+}
+function getTargetInfo(id) {
+  for (const v of Object.values(MIXES)) {
+    if (v.id === id) return v;
+  }
+  return null;
+}
+function getPaintByHex(hex) {
+  return PAINTS.find(p => p.hex === hex);
+}
+
+// ── Game state ───────────────────────────────────────────────
+let levelIndex  = 0;
+let score       = 0;
+let selected    = [];   // selected paint ids (max 2-3)
+let phase       = 'pick'; // pick | mixing | result | wrong
+let resultColor = null;
+let drops       = [];   // animated drip particles
+let confetti    = [];
+let pipSpeech   = '';
+let pipTimer    = 0;
+let wrongTimer  = 0;
+let mixProgress = 0;    // 0..1 mixing animation
+let resultFlash = 0;
+
+// ── Pip speech lines ─────────────────────────────────────────
+const PIP_IDLE = [
+  'Welke kleuren meng jij?',
+  'Tik op twee verfpotten!',
+  'Experimenteer maar!',
+  'Ik ben benieuwd!',
+  'Wetenschappers zijn nieuwsgierig!',
+];
+const PIP_CORRECT = [
+  'WAUW! Helemaal goed! 🎉',
+  'Super slim! Je bent een echte lab-held!',
+  'Bravo! Pip is trots op jou!',
+  'Fantastisch! Nog een level!',
+  'Ja! Dat klopt precies!',
+];
+const PIP_WRONG = [
+  'Bijna! Probeer andere kleuren!',
+  'Oops! Dat was niet de goede mix!',
+  'Niet erg – probeer het opnieuw!',
+  'Hmm, denk nog eens na!',
+];
+
+function setPipSpeech(msg) { pipSpeech = msg; pipTimer = 180; }
+
+// ── Particle helpers ─────────────────────────────────────────
+function spawnDrop(fromX, fromY, color, toX, toY) {
+  drops.push({ x: fromX, y: fromY, tx: toX, ty: toY, color, t: 0, size: 14 + Math.random() * 8 });
+}
+
+function spawnConfetti() {
+  for (let i = 0; i < 80; i++) {
+    confetti.push({
+      x: Math.random() * BASE_W,
+      y: -20,
+      vx: (Math.random() - 0.5) * 5,
+      vy: 2 + Math.random() * 4,
+      rot: Math.random() * Math.PI * 2,
+      vrot: (Math.random() - 0.5) * 0.2,
+      color: `hsl(${Math.floor(Math.random()*360)},90%,60%)`,
+      size: 8 + Math.random() * 8,
+      life: 1,
+    });
+  }
+}
+
+// ── Button: Next level ───────────────────────────────────────
+const NEXT_BTN = { x:580, y:530, w:180, h:46, label:'Volgende ➜' };
+const RETRY_BTN= { x:300, y:530, w:180, h:46, label:'Opnieuw 🔄' };
+
+// ── Input ────────────────────────────────────────────────────
+function canvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  let cx, cy;
+  if (e.touches) {
+    cx = e.touches[0].clientX - rect.left;
+    cy = e.touches[0].clientY - rect.top;
+  } else {
+    cx = e.clientX - rect.left;
+    cy = e.clientY - rect.top;
+  }
+  return { x: cx / scale, y: cy / scale };
+}
+
+function inRect(px, py, rx, ry, rw, rh) {
+  return px >= rx && px <= rx+rw && py >= ry && py <= ry+rh;
+}
+
+function handleTap(e) {
+  e.preventDefault();
+  const { x, y } = canvasPoint(e);
+
+  if (phase === 'result') {
+    if (inRect(x, y, NEXT_BTN.x, NEXT_BTN.y, NEXT_BTN.w, NEXT_BTN.h)) {
+      nextLevel();
+    }
+    return;
+  }
+  if (phase === 'wrong') {
+    if (inRect(x, y, RETRY_BTN.x, RETRY_BTN.y, RETRY_BTN.w, RETRY_BTN.h)) {
+      resetPick();
+    }
+    return;
+  }
+  if (phase === 'mixing') return;
+
+  // Check paint pots
+  for (const p of PAINTS) {
+    if (Math.hypot(x - p.x, y - p.y) < 44) {
+      selectPaint(p.id);
+      return;
+    }
+  }
+}
+
+canvas.addEventListener('click',      handleTap);
+canvas.addEventListener('touchstart', handleTap, { passive: false });
+
+// ── Selection logic ──────────────────────────────────────────
+function selectPaint(id) {
+  if (selected.includes(id)) {
+    // deselect
+    selected = selected.filter(s => s !== id);
+    return;
+  }
+  const level = LEVELS[levelIndex];
+  const maxSel = level.needs.length;
+  if (selected.length >= maxSel) {
+    selected.shift(); // remove oldest
+  }
+  selected.push(id);
+
+  // Animate drop
+  const paint = PAINTS.find(p => p.id === id);
+  spawnDrop(paint.x, paint.y, paint.hex, 490, 300);
+
+  if (selected.length === maxSel) {
+    startMixing();
+  }
+}
+
+function startMixing() {
+  phase = 'mixing';
+  mixProgress = 0;
+  setPipSpeech('Mengen maar!');
+}
+
+function evaluateMix() {
+  const level = LEVELS[levelIndex];
+  const result = getMixResult(selected);
+
+  if (result && result.id === level.target) {
+    // Correct!
+    resultColor = result;
+    phase = 'result';
+    resultFlash = 1;
+    score += 10 + (levelIndex * 2);
+    spawnConfetti();
+    setPipSpeech(PIP_CORRECT[Math.floor(Math.random() * PIP_CORRECT.length)]);
+  } else {
+    // Wrong
+    phase = 'wrong';
+    resultColor = result || { hex: '#888', label: '?' };
+    wrongTimer = 180;
+    setPipSpeech(level.hint);
+  }
+}
+
+function resetPick() {
+  selected = [];
+  drops = [];
+  phase = 'pick';
+  mixProgress = 0;
+  resultColor = null;
+  setPipSpeech(PIP_IDLE[Math.floor(Math.random() * PIP_IDLE.length)]);
+}
+
+function nextLevel() {
+  levelIndex = (levelIndex + 1) % LEVELS.length;
+  if (levelIndex === 0) score = 0; // wrap-around reset
+  resetPick();
+}
+
+// ── Init ─────────────────────────────────────────────────────
+function init() {
+  setPipSpeech(PIP_IDLE[0]);
+  requestAnimationFrame(loop);
+}
+
+// ── Main loop ────────────────────────────────────────────────
+let lastTime = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastTime) / 16.67, 3);
+  lastTime = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ── Update ───────────────────────────────────────────────────
+function update(dt) {
+  // Drip drops
+  drops = drops.filter(d => d.t < 1);
+  for (const d of drops) {
+    d.t = Math.min(d.t + 0.03 * dt, 1);
+  }
+
+  // Mixing animation
+  if (phase === 'mixing') {
+    mixProgress = Math.min(mixProgress + 0.015 * dt, 1);
+    if (mixProgress >= 1) {
+      evaluateMix();
+    }
+  }
+
+  // Confetti
+  confetti = confetti.filter(c => c.y < BASE_H + 30);
+  for (const c of confetti) {
+    c.x   += c.vx * dt;
+    c.y   += c.vy * dt;
+    c.rot += c.vrot * dt;
+    c.vy  += 0.05 * dt;
+  }
+
+  // Pip timer
+  if (pipTimer > 0) pipTimer -= dt;
+
+  // Result flash
+  if (resultFlash > 0) resultFlash = Math.max(0, resultFlash - 0.02 * dt);
+  if (wrongTimer  > 0) wrongTimer  -= dt;
+}
+
+// ── Draw helpers ─────────────────────────────────────────────
+function roundRect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+  if (fill)   { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw||2; ctx.stroke(); }
+}
+
+function drawStar(cx, cy, r, fill) {
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a1 = (i * 4 * Math.PI / 5) - Math.PI/2;
+    const a2 = (i * 4 * Math.PI / 5 + 2 * Math.PI / 5) - Math.PI/2;
+    const x1 = cx + Math.cos(a1) * r;
+    const y1 = cy + Math.sin(a1) * r;
+    const x2 = cx + Math.cos(a2) * (r*0.45);
+    const y2 = cy + Math.sin(a2) * (r*0.45);
+    if (i === 0) ctx.moveTo(x1, y1); else ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+// ── Draw background lab ──────────────────────────────────────
+function drawBackground() {
+  // Sky gradient
+  const bg = ctx.createLinearGradient(0, 0, 0, BASE_H);
+  bg.addColorStop(0,   '#0d0d2b');
+  bg.addColorStop(0.5, '#1a1a4e');
+  bg.addColorStop(1,   '#0a2942');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, BASE_W, BASE_H);
+
+  // Floor
+  roundRect(0, 410, BASE_W, BASE_H-410, 0, '#1e3a5f');
+
+  // Bench surface
+  const bench = ctx.createLinearGradient(0, 410, 0, 440);
+  bench.addColorStop(0, '#2a5298');
+  bench.addColorStop(1, '#1e3a5f');
+  ctx.fillStyle = bench;
+  ctx.fillRect(40, 410, BASE_W - 80, 18);
+  ctx.fillStyle = '#4a90d9';
+  ctx.fillRect(40, 410, BASE_W - 80, 4);
+
+  // Decorative beakers on shelves (background)
+  drawSmallBeaker(60,  340, '#FF6B6B', 0.5);
+  drawSmallBeaker(100, 355, '#4ECDC4', 0.3);
+  drawSmallBeaker(680, 340, '#FFE66D', 0.6);
+  drawSmallBeaker(720, 350, '#A29BFE', 0.4);
+
+  // Bubbles
+  const bubbleColors = ['#ff9ff3','#feca57','#48dbfb','#ff6b6b','#1dd1a1'];
+  for (let i = 0; i < 12; i++) {
+    const bx = 50 + (i * 63) % (BASE_W - 100);
+    const by = 30 + (i * 37) % 160;
+    const br = 6 + (i * 11) % 14;
+    ctx.beginPath();
+    ctx.arc(bx, by, br, 0, Math.PI*2);
+    ctx.fillStyle = bubbleColors[i % bubbleColors.length] + '55';
+    ctx.fill();
+    ctx.strokeStyle = bubbleColors[i % bubbleColors.length] + 'aa';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function drawSmallBeaker(x, y, color, fill) {
+  ctx.fillStyle = '#ffffff22';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x+4, y-25);
+  ctx.lineTo(x+22, y-25);
+  ctx.lineTo(x+26, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = color + '88';
+  const h = 25 * fill;
+  ctx.fillRect(x+2, y-h, 22, h);
+  ctx.strokeStyle = '#ffffff55';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// ── Draw Pip the robot ───────────────────────────────────────
+function drawPip() {
+  const px = 650, py = 230;
+
+  // Body
+  roundRect(px-28, py-10, 56, 70, 10, '#4a9eff', '#2563eb', 3);
+  // Belly screen
+  roundRect(px-16, py+5, 32, 30, 6, '#001a3d', '#4a9eff', 2);
+  // Belly screen glow lines
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = `hsl(${120+i*40},80%,60%)`;
+    roundRect(px-10, py+10+i*8, 20, 4, 2, `hsl(${120+i*40},80%,60%)`);
+  }
+
+  // Head
+  roundRect(px-24, py-55, 48, 42, 8, '#5bb0ff', '#2563eb', 3);
+  // Eyes
+  const eyeColors = ['#00ff88', '#00ddff'];
+  [px-12, px+4].forEach((ex, i) => {
+    ctx.beginPath();
+    ctx.arc(ex, py-37, 8, 0, Math.PI*2);
+    ctx.fillStyle = '#001a3d';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ex, py-37, 5, 0, Math.PI*2);
+    ctx.fillStyle = eyeColors[i];
+    ctx.fill();
+    // gleam
+    ctx.beginPath();
+    ctx.arc(ex+2, py-40, 2, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+  });
+  // Mouth (smile arc)
+  ctx.beginPath();
+  ctx.arc(px-4, py-24, 10, 0.2, Math.PI-0.2);
+  ctx.strokeStyle = '#001a3d';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Antenna
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(px-4, py-55);
+  ctx.lineTo(px-4, py-70);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(px-4, py-74, 5, 0, Math.PI*2);
+  ctx.fillStyle = '#ff4444';
+  ctx.fill();
+  ctx.strokeStyle = '#cc0000';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Arms
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 6;
+  ctx.lineCap = 'round';
+  // Left arm (pointing at beaker)
+  ctx.beginPath();
+  ctx.moveTo(px-28, py+10);
+  ctx.quadraticCurveTo(px-60, py+30, px-75, py+55);
+  ctx.stroke();
+  // Right arm
+  ctx.beginPath();
+  ctx.moveTo(px+28, py+10);
+  ctx.quadraticCurveTo(px+50, py+25, px+45, py+40);
+  ctx.stroke();
+  // Hand circles
+  ctx.beginPath();
+  ctx.arc(px-75, py+55, 7, 0, Math.PI*2);
+  ctx.fillStyle = '#5bb0ff';
+  ctx.fill();
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Legs
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 7;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(px-14, py+60);
+  ctx.lineTo(px-14, py+90);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px+10, py+60);
+  ctx.lineTo(px+10, py+90);
+  ctx.stroke();
+  // Feet
+  roundRect(px-22, py+88, 18, 10, 4, '#2563eb');
+  roundRect(px+4,  py+88, 18, 10, 4, '#2563eb');
+
+  // Speech bubble
+  if (pipTimer > 0 && pipSpeech) {
+    drawSpeechBubble(px - 30, py - 100, pipSpeech);
+  }
+}
+
+function drawSpeechBubble(cx, cy, text) {
+  ctx.save();
+  const maxW = 220;
+  ctx.font = 'bold 13px Segoe UI, sans-serif';
+  // Word wrap
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const w of words) {
+    const test = current ? current + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW - 20) {
+      if (current) lines.push(current);
+      current = w;
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+
+  const lineH = 18;
+  const bw = maxW;
+  const bh = lines.length * lineH + 20;
+  const bx = cx - bw / 2;
+  const by = cy - bh - 16;
+
+  roundRect(bx, by, bw, bh, 12, '#fffde7', '#ffd600', 2.5);
+  // Tail
+  ctx.beginPath();
+  ctx.moveTo(cx - 8, by + bh);
+  ctx.lineTo(cx + 8, by + bh);
+  ctx.lineTo(cx + 4, by + bh + 16);
+  ctx.closePath();
+  ctx.fillStyle = '#fffde7';
+  ctx.fill();
+  ctx.strokeStyle = '#ffd600';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#333';
+  ctx.textAlign = 'center';
+  lines.forEach((l, i) => {
+    ctx.fillText(l, cx, by + 16 + i * lineH);
+  });
+  ctx.restore();
+}
+
+// ── Draw target color ─────────────────────────────────────────
+function drawTarget() {
+  const level   = LEVELS[levelIndex];
+  const info    = getTargetInfo(level.target);
+  if (!info) return;
+
+  const tx = 40, ty = 20, tw = 280, th = 80;
+  roundRect(tx, ty, tw, th, 14, '#001a3d88', '#4a9eff', 2);
+
+  ctx.fillStyle = '#aad4ff';
+  ctx.font = 'bold 14px Segoe UI, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Maak deze kleur:', tx + 12, ty + 20);
+
+  // Color swatch
+  roundRect(tx+12, ty+28, 40, 38, 8, info.hex, '#fff', 2);
+
+  // Label
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 22px Segoe UI, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(info.label.toUpperCase(), tx + 64, ty + 54);
+}
+
+// ── Draw score / level ────────────────────────────────────────
+function drawHUD() {
+  // Score
+  roundRect(BASE_W-170, 20, 130, 50, 10, '#001a3d88', '#4a9eff', 2);
+  ctx.fillStyle = '#aad4ff';
+  ctx.font = '13px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText('Punten', BASE_W-105, 38);
+  ctx.fillStyle = '#FFD60A';
+  ctx.font = 'bold 24px Segoe UI';
+  ctx.fillText(score, BASE_W-105, 60);
+
+  // Level dots
+  const dotY = 82;
+  for (let i = 0; i < LEVELS.length; i++) {
+    const dx = 42 + i * 16;
+    ctx.beginPath();
+    ctx.arc(dx, dotY, 5, 0, Math.PI*2);
+    ctx.fillStyle = i <= levelIndex ? '#FFD60A' : '#ffffff33';
+    ctx.fill();
+    if (i === levelIndex) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#aad4ff';
+  ctx.font = '11px Segoe UI';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Level ${levelIndex+1} / ${LEVELS.length}`, 40, 72);
+}
+
+// ── Draw paint pots ───────────────────────────────────────────
+function drawPots() {
+  PAINTS.forEach(p => {
+    const isSel = selected.includes(p.id);
+    const pulse = isSel ? 1 + 0.07 * Math.sin(Date.now() * 0.008) : 1;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(pulse, pulse);
+
+    // Shadow
+    ctx.beginPath();
+    ctx.ellipse(0, 36, 34, 8, 0, 0, Math.PI*2);
+    ctx.fillStyle = '#00000055';
+    ctx.fill();
+
+    // Pot body
+    ctx.beginPath();
+    ctx.moveTo(-26, 0);
+    ctx.lineTo(-22, 32);
+    ctx.quadraticCurveTo(0, 40, 22, 32);
+    ctx.lineTo(26, 0);
+    ctx.closePath();
+    ctx.fillStyle = p.hex;
+    ctx.fill();
+    ctx.strokeStyle = isSel ? '#ffffff' : '#ffffff55';
+    ctx.lineWidth   = isSel ? 3 : 1.5;
+    ctx.stroke();
+
+    // Rim
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 26, 9, 0, 0, Math.PI*2);
+    ctx.fillStyle = p.hex;
+    ctx.fill();
+    ctx.strokeStyle = isSel ? '#ffffff' : '#ffffff55';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Shine
+    ctx.beginPath();
+    ctx.ellipse(-8, -3, 10, 4, -0.3, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff44';
+    ctx.fill();
+
+    // Check mark when selected
+    if (isSel) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✓', 0, -14);
+      // Glow ring
+      ctx.beginPath();
+      ctx.arc(0, 16, 32, 0, Math.PI*2);
+      ctx.strokeStyle = '#ffffff88';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Label
+    ctx.fillStyle = '#cce4ff';
+    ctx.font = 'bold 13px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.label, p.x, p.y + 56);
+  });
+}
+
+// ── Draw mixing beaker ────────────────────────────────────────
+function drawBeaker() {
+  const bx = 430, by = 220, bw = 120, bh = 140;
+
+  // Glass
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(bx - 10, by + bh);
+  ctx.quadraticCurveTo(bx + bw/2, by + bh + 20, bx + bw + 10, by + bh);
+  ctx.lineTo(bx + bw, by);
+  ctx.strokeStyle = '#90caf9';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#b3e5fc22';
+  ctx.fill();
+
+  // Rim
+  ctx.beginPath();
+  ctx.ellipse(bx + bw/2, by, bw/2 + 5, 10, 0, 0, Math.PI*2);
+  ctx.strokeStyle = '#90caf9';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Pour spout
+  ctx.beginPath();
+  ctx.moveTo(bx + bw, by - 5);
+  ctx.lineTo(bx + bw + 18, by - 22);
+  ctx.lineTo(bx + bw + 26, by - 14);
+  ctx.strokeStyle = '#90caf9';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Measurement lines
+  for (let i = 1; i <= 4; i++) {
+    const ly = by + 20 + i * 24;
+    ctx.beginPath();
+    ctx.moveTo(bx + bw - 16, ly);
+    ctx.lineTo(bx + bw - 4,  ly);
+    ctx.strokeStyle = '#90caf900' + Math.floor(128 + i*24).toString(16).padStart(2,'0');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Liquid
+  const fillColors = selected.map(id => PAINTS.find(p => p.id === id)?.hex).filter(Boolean);
+  if (fillColors.length === 0) return;
+
+  let liquidColor;
+  if (phase === 'mixing' || phase === 'result' || phase === 'wrong') {
+    const result = getMixResult(selected);
+    if (phase === 'mixing') {
+      // Interpolate from first color to result
+      const start = fillColors[0];
+      const end   = result ? result.hex : fillColors[fillColors.length-1];
+      liquidColor = lerpColor(start, end, mixProgress);
+    } else {
+      liquidColor = result ? result.hex : fillColors[0];
+    }
+  } else {
+    liquidColor = fillColors[fillColors.length - 1];
+  }
+
+  const liquidLevel = 0.6;
+  const ly = by + bh * (1 - liquidLevel) + 10;
+  const lh = bh * liquidLevel + 5;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx + 2, by);
+  ctx.lineTo(bx - 8, by + bh);
+  ctx.quadraticCurveTo(bx + bw/2, by + bh + 18, bx + bw + 8, by + bh);
+  ctx.lineTo(bx + bw - 2, by);
+  ctx.closePath();
+  ctx.clip();
+
+  ctx.fillStyle = liquidColor;
+  roundRect(bx - 10, ly, bw + 22, lh, 0, liquidColor);
+
+  // Bubble animation while mixing
+  if (phase === 'mixing') {
+    const nb = Math.floor(mixProgress * 8);
+    for (let i = 0; i < nb; i++) {
+      const bba = (i / nb) * Math.PI * 2 + mixProgress * 10;
+      const bbx = bx + bw/2 + 20 * Math.cos(bba + i);
+      const bby = ly + lh * 0.3 + 20 * Math.sin(bba * 2 + i * 0.7);
+      ctx.beginPath();
+      ctx.arc(bbx, bby, 4 + i%3, 0, Math.PI*2);
+      ctx.fillStyle = '#ffffff55';
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+
+  // Shine overlay
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx + 2, by);
+  ctx.lineTo(bx - 8, by + bh);
+  ctx.quadraticCurveTo(bx + bw/2, by + bh + 18, bx + bw + 8, by + bh);
+  ctx.lineTo(bx + bw - 2, by);
+  ctx.closePath();
+  ctx.clip();
+  const shine = ctx.createLinearGradient(bx, 0, bx+bw, 0);
+  shine.addColorStop(0,   '#ffffff22');
+  shine.addColorStop(0.3, '#ffffff00');
+  shine.addColorStop(1,   '#ffffff11');
+  ctx.fillStyle = shine;
+  ctx.fillRect(bx-10, by, bw+22, bh+20);
+  ctx.restore();
+
+  // Label of mixed color in result state
+  if ((phase === 'result' || phase === 'wrong') && resultColor) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText(resultColor.label || '?', bx + bw/2, by + bh + 40);
+  }
+}
+
+// ── Draw animated drip drops ──────────────────────────────────
+function drawDrops() {
+  for (const d of drops) {
+    const ease = 1 - Math.pow(1 - d.t, 3);
+    const cx = d.x + (d.tx - d.x) * ease;
+    const cy = d.y + (d.ty - d.y) * ease;
+    const r  = d.size * (1 - d.t * 0.3);
+    // Tail
+    ctx.beginPath();
+    ctx.moveTo(d.x, d.y);
+    ctx.quadraticCurveTo(d.x + (cx-d.x)*0.3, d.y + (cy-d.y)*0.3, cx, cy);
+    ctx.strokeStyle = d.color + '88';
+    ctx.lineWidth = r * 0.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    // Drop
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = d.color;
+    ctx.fill();
+  }
+}
+
+// ── Draw result panel ─────────────────────────────────────────
+function drawResultPanel() {
+  if (phase !== 'result' && phase !== 'wrong') return;
+  const isCorrect = phase === 'result';
+
+  // Flash overlay
+  if (isCorrect && resultFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${resultFlash * 0.3})`;
+    ctx.fillRect(0, 0, BASE_W, BASE_H);
+  }
+
+  // Result banner
+  const bx = 40, by = 490, bw = 500, bh = 80;
+  const color = isCorrect ? '#1a9e3f' : '#9e2a1a';
+  const border= isCorrect ? '#6ddc8a' : '#ff7055';
+  roundRect(bx, by, bw, bh, 14, color + 'cc', border, 3);
+
+  if (isCorrect) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 22px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🎉 Super! Je maakte ${resultColor?.label || ''}!  +${10 + levelIndex*2} punten`, bx+bw/2, by+30);
+    ctx.font = '16px Segoe UI';
+    ctx.fillText('Tap "Volgende" voor de volgende kleur', bx+bw/2, by+55);
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText('Dat was niet de goede mix…', bx+bw/2, by+28);
+    const level = LEVELS[levelIndex];
+    ctx.font = '14px Segoe UI';
+    ctx.fillText(level.hint, bx+bw/2, by+52);
+  }
+
+  // Buttons
+  if (isCorrect) {
+    drawButton(NEXT_BTN, '#1a6ebd', '#4a9eff');
+  }
+  drawButton(RETRY_BTN, '#7a3d00', '#ff9f43');
+}
+
+function drawButton(btn, bg, border) {
+  roundRect(btn.x, btn.y, btn.w, btn.h, 10, bg, border, 2.5);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 16px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2 + 6);
+}
+
+// ── Draw confetti ─────────────────────────────────────────────
+function drawConfetti() {
+  for (const c of confetti) {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
+    ctx.fillStyle = c.color;
+    const sz = c.size;
+    if (Math.floor(c.x) % 3 === 0) {
+      // circle
+      ctx.beginPath();
+      ctx.arc(0, 0, sz/2, 0, Math.PI*2);
+      ctx.fill();
+    } else if (Math.floor(c.x) % 3 === 1) {
+      // rect
+      ctx.fillRect(-sz/2, -sz/4, sz, sz/2);
+    } else {
+      // star
+      drawStar(0, 0, sz/2, c.color);
+    }
+    ctx.restore();
+  }
+}
+
+// ── Draw mixing progress bar ──────────────────────────────────
+function drawMixingProgress() {
+  if (phase !== 'mixing') return;
+  const bx = 350, by = 400, bw = 240, bh = 18;
+  roundRect(bx, by, bw, bh, 9, '#001a3d', '#4a9eff', 2);
+  const grad = ctx.createLinearGradient(bx, 0, bx+bw, 0);
+  grad.addColorStop(0, '#4a9eff');
+  grad.addColorStop(1, '#ff6bff');
+  roundRect(bx+2, by+2, (bw-4)*mixProgress, bh-4, 7, grad);
+  ctx.fillStyle = '#cce4ff';
+  ctx.font = '13px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText('Mengen…', bx+bw/2, by + bh + 16);
+}
+
+// ── Draw title banner ─────────────────────────────────────────
+function drawTitle() {
+  ctx.save();
+  ctx.font = 'bold 26px Segoe UI';
+  ctx.textAlign = 'left';
+  // Outline
+  ctx.strokeStyle = '#001a3dcc';
+  ctx.lineWidth = 4;
+  ctx.strokeText('🔬 Kleurmix Lab', 40, 110);
+  // Fill gradient
+  const tg = ctx.createLinearGradient(40, 85, 300, 115);
+  tg.addColorStop(0, '#ffd700');
+  tg.addColorStop(0.5, '#ff9ff3');
+  tg.addColorStop(1, '#48dbfb');
+  ctx.fillStyle = tg;
+  ctx.fillText('🔬 Kleurmix Lab', 40, 110);
+  ctx.restore();
+}
+
+// ── Colour lerp helper ────────────────────────────────────────
+function hexToRGB(hex) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return [r,g,b];
+}
+function lerpColor(a, b, t) {
+  const [ar,ag,ab] = hexToRGB(a);
+  const [br,bg,bb] = hexToRGB(b);
+  const r = Math.round(ar + (br-ar)*t);
+  const g = Math.round(ag + (bg-ag)*t);
+  const bl= Math.round(ab + (bb-ab)*t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// ── Draw instruction ──────────────────────────────────────────
+function drawInstruction() {
+  if (phase !== 'pick') return;
+  const level  = LEVELS[levelIndex];
+  const needed = level.needs.length;
+  const left   = needed - selected.length;
+
+  ctx.fillStyle = '#aad4ff';
+  ctx.font = '15px Segoe UI';
+  ctx.textAlign = 'center';
+  const msg = left > 0
+    ? `Tik op ${left} verfpot${left>1?'ten':''}! (${selected.length}/${needed} gekozen)`
+    : 'Even mengen…';
+  ctx.fillText(msg, BASE_W/2, 140);
+}
+
+// ── Main draw ─────────────────────────────────────────────────
+function draw() {
+  ctx.save();
+  ctx.scale(scale, scale);
+
+  drawBackground();
+  drawTitle();
+  drawHUD();
+  drawTarget();
+  drawInstruction();
+  drawBeaker();
+  drawDrops();
+  drawPots();
+  drawPip();
+  drawMixingProgress();
+  drawResultPanel();
+  drawConfetti();
+
+  ctx.restore();
+}
+
+// ── Start ─────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
