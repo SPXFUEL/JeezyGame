@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Telpinguïns 🐧</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: linear-gradient(180deg, #0a1628 0%, #0d2145 40%, #1a4a7a 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #header {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    color: #fff;
+  }
+
+  #score-display {
+    font-size: 1.2rem;
+    color: #a8e6ff;
+    text-shadow: 0 0 8px #4fc3f7;
+  }
+
+  #round-display {
+    font-size: 1.1rem;
+    color: #ffe082;
+    text-shadow: 0 0 8px #ffb300;
+  }
+
+  #stars-display {
+    font-size: 1.4rem;
+    letter-spacing: 2px;
+  }
+
+  #game-container {
+    width: 100%;
+    max-width: 640px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  #canvas-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+  }
+
+  #gameCanvas {
+    display: block;
+    width: 100%;
+    border-radius: 16px;
+    border: 3px solid #4fc3f7;
+    box-shadow: 0 0 30px #1565c0, 0 0 60px #0d47a1;
+  }
+
+  #confetti-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    border-radius: 16px;
+  }
+
+  #message-box {
+    margin: 12px 0 6px;
+    font-size: 1.5rem;
+    color: #fff;
+    text-align: center;
+    min-height: 40px;
+    text-shadow: 0 2px 8px #000a;
+    padding: 0 10px;
+  }
+
+  #buttons-area {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    padding: 8px 16px 16px;
+    flex-wrap: wrap;
+  }
+
+  .answer-btn {
+    width: 95px;
+    height: 95px;
+    font-size: 2.2rem;
+    font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+    font-weight: bold;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    background: linear-gradient(145deg, #29b6f6, #0277bd);
+    color: #fff;
+    box-shadow: 0 6px 0 #01579b, 0 0 16px #0288d180;
+    transition: transform 0.08s, box-shadow 0.08s;
+    touch-action: manipulation;
+    text-shadow: 0 2px 4px #0005;
+  }
+
+  .answer-btn:active {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #01579b;
+  }
+
+  .answer-btn.correct {
+    background: linear-gradient(145deg, #66bb6a, #2e7d32);
+    box-shadow: 0 6px 0 #1b5e20, 0 0 20px #66bb6a80;
+    animation: btn-pop 0.3s ease;
+  }
+
+  .answer-btn.wrong {
+    background: linear-gradient(145deg, #ef5350, #b71c1c);
+    box-shadow: 0 6px 0 #7f0000, 0 0 16px #ef535080;
+    animation: btn-shake 0.3s ease;
+  }
+
+  @keyframes btn-pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes btn-shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+    100% { transform: translateX(0); }
+  }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: #000c;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    gap: 18px;
+  }
+
+  #overlay.hidden { display: none; }
+
+  #overlay h1 {
+    font-size: 2.6rem;
+    color: #ffe082;
+    text-shadow: 0 0 20px #ffb300, 0 3px 0 #e65100;
+    text-align: center;
+  }
+
+  #overlay p {
+    font-size: 1.3rem;
+    color: #e0f7fa;
+    text-align: center;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  #overlay .big-stars {
+    font-size: 2.5rem;
+    letter-spacing: 6px;
+  }
+
+  #restart-btn {
+    padding: 18px 40px;
+    font-size: 1.5rem;
+    font-family: 'Comic Sans MS', cursive;
+    background: linear-gradient(145deg, #ffd54f, #ff8f00);
+    color: #333;
+    border: none;
+    border-radius: 24px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #e65100, 0 0 24px #ffd54f80;
+    transition: transform 0.08s;
+    margin-top: 10px;
+  }
+
+  #restart-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e65100; }
+
+  #count-flash {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 6rem;
+    color: #fff;
+    text-shadow: 0 0 30px #4fc3f7, 0 4px 0 #000;
+    opacity: 0;
+    pointer-events: none;
+    font-family: 'Comic Sans MS', cursive;
+    font-weight: bold;
+    transition: opacity 0.2s;
+  }
+
+  /* snow particles */
+  .snowflake {
+    position: fixed;
+    top: -20px;
+    color: #cde;
+    font-size: 1.2em;
+    pointer-events: none;
+    animation: fall linear infinite;
+    opacity: 0.7;
+    z-index: 0;
+  }
+
+  @keyframes fall {
+    to { transform: translateY(110vh) rotate(360deg); }
+  }
+</style>
+</head>
+<body>
+
+<!-- Snow background -->
+<div id="snow-layer"></div>
+
+<div id="header">
+  <div id="score-display">Score: <span id="score">0</span></div>
+  <div id="round-display">Ronde <span id="round">1</span>/10</div>
+  <div id="stars-display" id="stars">⭐</div>
+</div>
+
+<div id="game-container">
+  <div id="canvas-wrapper">
+    <canvas id="gameCanvas" width="640" height="320"></canvas>
+    <canvas id="confetti-canvas" width="640" height="320"></canvas>
+    <div id="count-flash"></div>
+  </div>
+
+  <div id="message-box">Tel de pinguïns! 🐧</div>
+
+  <div id="buttons-area" id="buttons-area">
+    <!-- dynamically filled -->
+  </div>
+</div>
+
+<!-- Start/End overlay -->
+<div id="overlay">
+  <h1>🐧 Telpinguïns! 🐧</h1>
+  <p>Tel de pinguïns terwijl ze over het ijs lopen!</p>
+  <div class="big-stars" id="overlay-stars">⭐⭐⭐</div>
+  <p id="overlay-score" style="font-size:1.1rem;color:#ffe082"></p>
+  <button id="restart-btn" onclick="startGame()">Spelen! 🎮</button>
+</div>
+
+<script>
+"use strict";
+
+// ─── Audio ───────────────────────────────────────────────────────────────────
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+}
+
+function playTone(freq, type = 'sine', duration = 0.15, vol = 0.3, delay = 0) {
+  try {
+    ensureAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, audioCtx.currentTime + delay);
+    gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + delay + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + duration);
+    osc.start(audioCtx.currentTime + delay);
+    osc.stop(audioCtx.currentTime + delay + duration + 0.05);
+  } catch(e) {}
+}
+
+function playPop() { playTone(900, 'sine', 0.1, 0.25); }
+function playWaddle() { playTone(500 + Math.random()*100, 'triangle', 0.08, 0.15); }
+
+function playCorrect() {
+  [523, 659, 784, 1047].forEach((f, i) => playTone(f, 'sine', 0.18, 0.3, i * 0.12));
+}
+
+function playWrong() {
+  [330, 277].forEach((f, i) => playTone(f, 'sawtooth', 0.2, 0.3, i * 0.15));
+}
+
+function playSplash() {
+  playTone(300, 'sine', 0.25, 0.3);
+  playTone(200, 'triangle', 0.3, 0.2, 0.05);
+}
+
+function playCountBeep(n) {
+  const freqs = [261,294,330,349,392,440,494,523,587,659];
+  playTone(freqs[(n - 1) % freqs.length], 'sine', 0.12, 0.3);
+}
+
+// ─── Snow decoration ─────────────────────────────────────────────────────────
+(function createSnow() {
+  const layer = document.getElementById('snow-layer');
+  for (let i = 0; i < 18; i++) {
+    const el = document.createElement('div');
+    el.className = 'snowflake';
+    el.textContent = ['❄','❅','❆','·','*'][Math.floor(Math.random()*5)];
+    el.style.left = Math.random() * 100 + 'vw';
+    el.style.fontSize = (0.8 + Math.random() * 1.4) + 'em';
+    el.style.animationDuration = (6 + Math.random() * 12) + 's';
+    el.style.animationDelay = (-Math.random() * 12) + 's';
+    el.style.opacity = 0.3 + Math.random() * 0.5;
+    layer.appendChild(el);
+  }
+})();
+
+// ─── Canvas setup ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const confCanvas = document.getElementById('confetti-canvas');
+const confCtx = confCanvas.getContext('2d');
+
+const W = 640, H = 320;
+
+// ─── Game state ───────────────────────────────────────────────────────────────
+let round = 0;
+let score = 0;
+let totalStars = 0;
+let correctAnswer = 0;
+let gamePhase = 'idle'; // idle | spawning | counting | answering | feedback | ending
+let penguins = [];
+let spawnTimer = 0;
+let spawnIndex = 0;
+let spawnCount = 0;
+let countTimer = 0;
+let feedbackTimer = 0;
+let answeredCorrect = false;
+let lastAnswerTime = 0;
+let animFrame = null;
+let confettiParticles = [];
+let countdownTimer = 0;
+let countdownVal = 0;
+let splashEffects = [];
+
+// ─── Penguin ──────────────────────────────────────────────────────────────────
+class Penguin {
+  constructor(startX, lane) {
+    this.x = startX;
+    this.baseX = startX;
+    this.lane = lane; // y position row
+    this.y = 160 + lane * 28;
+    this.vx = 1.4 + Math.random() * 0.6;
+    this.waddlePhase = Math.random() * Math.PI * 2;
+    this.waddleSpeed = 0.18 + Math.random() * 0.06;
+    this.scale = 0.9 + Math.random() * 0.2;
+    this.alive = true;
+    this.splashing = false;
+    this.splashTimer = 0;
+    this.opacity = 0;
+    this.fadeIn = true;
+    this.counted = false;
+    this.countBubble = 0; // frames to show count number above head
+    this.myNumber = 0;
+    this.stopped = false;
+    this.stopX = 80 + Math.random() * 460; // where it stops to be counted
+    this.reached = false;
+  }
+
+  update(dt) {
+    if (this.fadeIn) {
+      this.opacity = Math.min(1, this.opacity + 0.06);
+      if (this.opacity >= 1) this.fadeIn = false;
+    }
+
+    if (!this.stopped && !this.splashing) {
+      this.x += this.vx;
+      this.waddlePhase += this.waddleSpeed;
+      if (this.x >= W + 80) {
+        this.alive = false;
+      }
+    } else if (this.stopped) {
+      this.waddlePhase += 0.05; // gentle sway
+    }
+
+    if (this.splashing) {
+      this.splashTimer--;
+      if (this.splashTimer <= 0) this.alive = false;
+    }
+
+    if (this.countBubble > 0) this.countBubble--;
+  }
+
+  draw(ctx) {
+    if (!this.alive) return;
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.translate(this.x, this.y);
+
+    const wobble = Math.sin(this.waddlePhase) * (this.stopped ? 2 : 5);
+    ctx.rotate(wobble * 0.04);
+    ctx.scale(this.scale, this.scale);
+
+    if (this.splashing) {
+      // Splash circles
+      const p = 1 - this.splashTimer / 30;
+      ctx.globalAlpha = (1 - p) * this.opacity;
+      ctx.beginPath();
+      ctx.arc(0, 10, 30 * p, 0, Math.PI * 2);
+      ctx.strokeStyle = '#4fc3f7';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(-10, 5, 20 * p, 0, Math.PI * 2);
+      ctx.strokeStyle = '#81d4fa';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    // Body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 18, 24, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fill();
+
+    // White belly
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 10, 16, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#f0f8ff';
+    ctx.fill();
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(0, -22, 13, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fill();
+
+    // Face white patch
+    ctx.beginPath();
+    ctx.ellipse(0, -22, 8, 9, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#f0f8ff';
+    ctx.fill();
+
+    // Eyes
+    ctx.beginPath();
+    ctx.arc(-4, -25, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(4, -25, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    // Pupils
+    ctx.beginPath();
+    ctx.arc(-3.5, -25, 1.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(4.5, -25, 1.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    // Eye shine
+    ctx.beginPath();
+    ctx.arc(-3, -26, 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(5, -26, 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+
+    // Beak
+    ctx.beginPath();
+    ctx.moveTo(-4, -20);
+    ctx.lineTo(4, -20);
+    ctx.lineTo(0, -16);
+    ctx.closePath();
+    ctx.fillStyle = '#ff8f00';
+    ctx.fill();
+
+    // Wings
+    const wingAngle = Math.sin(this.waddlePhase) * 0.4;
+    // Left wing
+    ctx.save();
+    ctx.translate(-18, -5);
+    ctx.rotate(-wingAngle - 0.3);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6, 14, -0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fill();
+    ctx.restore();
+    // Right wing
+    ctx.save();
+    ctx.translate(18, -5);
+    ctx.rotate(wingAngle + 0.3);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6, 14, 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fill();
+    ctx.restore();
+
+    // Feet
+    const footL = Math.sin(this.waddlePhase) * 4;
+    ctx.beginPath();
+    ctx.ellipse(-6 + footL, 24, 7, 4, 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff8f00';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(6 - footL, 24, 7, 4, -0.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff8f00';
+    ctx.fill();
+
+    // Count bubble above head
+    if (this.countBubble > 0 && this.myNumber > 0) {
+      const alpha = Math.min(1, this.countBubble / 10);
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(0, -42, 14, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffe082';
+      ctx.fill();
+      ctx.strokeStyle = '#ff8f00';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 14px Comic Sans MS, cursive';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.myNumber, 0, -42);
+    }
+
+    ctx.restore();
+  }
+}
+
+// ─── Confetti ─────────────────────────────────────────────────────────────────
+function spawnConfetti() {
+  confettiParticles = [];
+  const colors = ['#ff5252','#ff4081','#e040fb','#7c4dff','#40c4ff','#69f0ae','#ffff00','#ff6d00','#fff','#ffe082'];
+  for (let i = 0; i < 80; i++) {
+    confettiParticles.push({
+      x: Math.random() * W,
+      y: -20,
+      vx: (Math.random() - 0.5) * 5,
+      vy: 2 + Math.random() * 4,
+      rot: Math.random() * Math.PI * 2,
+      rotV: (Math.random() - 0.5) * 0.3,
+      w: 8 + Math.random() * 8,
+      h: 4 + Math.random() * 6,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      life: 1
+    });
+  }
+}
+
+function updateConfetti() {
+  confCtx.clearRect(0, 0, W, H);
+  confettiParticles = confettiParticles.filter(p => p.life > 0);
+  for (const p of confettiParticles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.1;
+    p.rot += p.rotV;
+    p.life -= 0.012;
+    if (p.y > H) p.life = 0;
+
+    confCtx.save();
+    confCtx.globalAlpha = Math.max(0, p.life);
+    confCtx.translate(p.x, p.y);
+    confCtx.rotate(p.rot);
+    confCtx.fillStyle = p.color;
+    confCtx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+    confCtx.restore();
+  }
+}
+
+// ─── Draw scene ───────────────────────────────────────────────────────────────
+function drawScene() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, '#0d1b3e');
+  skyGrad.addColorStop(0.6, '#1a3a6a');
+  skyGrad.addColorStop(1, '#2a6fa8');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars in sky
+  ctx.fillStyle = '#ffffffcc';
+  const starPositions = [
+    [40,20],[100,35],[200,15],[320,28],[450,10],[550,30],[600,18],
+    [80,50],[260,45],[400,38],[500,55],[150,60],[350,65]
+  ];
+  for (const [sx,sy] of starPositions) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Moon
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(590, 40, 22, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffe082';
+  ctx.shadowColor = '#ffe082';
+  ctx.shadowBlur = 20;
+  ctx.fill();
+  // Crescent shadow
+  ctx.beginPath();
+  ctx.arc(597, 36, 19, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a3a6a';
+  ctx.fill();
+  ctx.restore();
+
+  // Aurora borealis (wavy bands)
+  ctx.save();
+  ctx.globalAlpha = 0.15;
+  for (let b = 0; b < 3; b++) {
+    ctx.beginPath();
+    const t = Date.now() / 2000;
+    ctx.moveTo(0, 80 + b * 20);
+    for (let x = 0; x <= W; x += 20) {
+      ctx.lineTo(x, 80 + b * 20 + Math.sin(x / 80 + t + b) * 12);
+    }
+    const auroraColors = ['#00e5ff','#69f0ae','#e040fb'];
+    ctx.strokeStyle = auroraColors[b];
+    ctx.lineWidth = 8;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Ice ground
+  const iceGrad = ctx.createLinearGradient(0, H * 0.62, 0, H);
+  iceGrad.addColorStop(0, '#b3e5fc');
+  iceGrad.addColorStop(0.3, '#e1f5fe');
+  iceGrad.addColorStop(1, '#f0f9ff');
+  ctx.fillStyle = iceGrad;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.62);
+  for (let x = 0; x <= W; x += 40) {
+    ctx.lineTo(x, H * 0.62 + Math.sin(x / 60) * 4);
+  }
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ice shine lines
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const iy = H * 0.65 + i * 14;
+    ctx.beginPath();
+    ctx.moveTo(0, iy);
+    ctx.lineTo(W, iy + 3);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Water on right side
+  const waterGrad = ctx.createLinearGradient(W * 0.78, 0, W, 0);
+  waterGrad.addColorStop(0, '#1565c088');
+  waterGrad.addColorStop(1, '#0d47a1cc');
+  ctx.fillStyle = waterGrad;
+  ctx.beginPath();
+  const waterTop = H * 0.62;
+  ctx.moveTo(W * 0.78, waterTop);
+  for (let x = W * 0.78; x <= W; x += 10) {
+    ctx.lineTo(x, waterTop + Math.sin(x / 15 + Date.now() / 500) * 3);
+  }
+  ctx.lineTo(W, H);
+  ctx.lineTo(W * 0.78, H);
+  ctx.closePath();
+  ctx.fill();
+  // Water glints
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  ctx.fillStyle = '#81d4fa';
+  for (let g = 0; g < 5; g++) {
+    const gx = W * 0.82 + g * 18 + Math.sin(Date.now()/600 + g) * 6;
+    const gy = H * 0.67 + g * 7;
+    ctx.beginPath();
+    ctx.ellipse(gx, gy, 8, 2, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Ice-water edge
+  ctx.save();
+  ctx.strokeStyle = '#29b6f6';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([12, 6]);
+  ctx.beginPath();
+  ctx.moveTo(W * 0.78, H * 0.62);
+  ctx.lineTo(W * 0.78, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // "Water" label
+  ctx.save();
+  ctx.font = 'bold 13px Comic Sans MS, cursive';
+  ctx.fillStyle = '#b3e5fc';
+  ctx.globalAlpha = 0.7;
+  ctx.textAlign = 'center';
+  ctx.fillText('💧 water', W * 0.895, H * 0.69);
+  ctx.restore();
+
+  // Draw penguins
+  for (const p of penguins) p.draw(ctx);
+
+  // Countdown overlay
+  if (gamePhase === 'counting' && countdownVal > 0) {
+    ctx.save();
+    ctx.font = `bold 48px Comic Sans MS, cursive`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffe082';
+    ctx.shadowColor = '#ffb300';
+    ctx.shadowBlur = 20;
+    ctx.fillText(`⏳ ${countdownVal}`, W / 2, 60);
+    ctx.restore();
+  }
+
+  // "Hoeveel?" prompt during answering
+  if (gamePhase === 'answering') {
+    ctx.save();
+    ctx.font = `bold 28px Comic Sans MS, cursive`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffe082';
+    ctx.shadowColor = '#ffb300';
+    ctx.shadowBlur = 10;
+    ctx.fillText('Hoeveel pinguïns? 🐧', W / 2, 40);
+    ctx.restore();
+  }
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function updateHUD() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('round').textContent = Math.min(round + 1, 10);
+  document.getElementById('stars-display').textContent = '⭐'.repeat(Math.max(0, totalStars)) || '☆';
+}
+
+function setMessage(msg) {
+  document.getElementById('message-box').textContent = msg;
+}
+
+function createAnswerButtons(options, correct) {
+  const area = document.getElementById('buttons-area');
+  area.innerHTML = '';
+  for (const val of options) {
+    const btn = document.createElement('button');
+    btn.className = 'answer-btn';
+    btn.textContent = val;
+    btn.dataset.val = val;
+    btn.onclick = () => handleAnswer(val, correct, btn);
+    area.appendChild(btn);
+  }
+}
+
+function clearButtons() {
+  document.getElementById('buttons-area').innerHTML = '';
+}
+
+function handleAnswer(val, correct, btn) {
+  if (gamePhase !== 'answering') return;
+  ensureAudio();
+  gamePhase = 'feedback';
+  answeredCorrect = (val === correct);
+
+  if (answeredCorrect) {
+    btn.classList.add('correct');
+    playCorrect();
+    spawnConfetti();
+    const earned = 3; // always 3 stars for correct (simplified)
+    totalStars += earned;
+    score += 10;
+    setMessage('🎉 Super goed! Jij kan tellen! ⭐⭐⭐');
+  } else {
+    btn.classList.add('wrong');
+    playWrong();
+    setMessage(`❌ Het waren ${correct} pinguïns! Probeer het nog eens!`);
+    // Highlight correct
+    const allBtns = document.querySelectorAll('.answer-btn');
+    for (const b of allBtns) {
+      if (parseInt(b.dataset.val) === correct) b.classList.add('correct');
+    }
+  }
+  updateHUD();
+
+  feedbackTimer = 120; // frames
+}
+
+function showOverlay(isEnd) {
+  const overlay = document.getElementById('overlay');
+  overlay.classList.remove('hidden');
+  if (isEnd) {
+    document.getElementById('overlay').querySelector('h1').textContent = '🎊 Klaar! 🎊';
+    const msg = totalStars >= 25 ? 'Fantastisch! Jij bent een tel-kampioen! 🏆' :
+                totalStars >= 15 ? 'Heel goed gedaan! 🌟' : 'Goed geprobeerd! Oefen nog wat! 💪';
+    document.getElementById('overlay').querySelectorAll('p')[0].textContent = msg;
+    document.getElementById('overlay-stars').textContent = '⭐'.repeat(Math.min(totalStars, 10)) + (totalStars > 10 ? `+${totalStars-10}` : '');
+    document.getElementById('overlay-score').textContent = `Score: ${score} punten`;
+    document.getElementById('restart-btn').textContent = 'Nog een keer! 🔄';
+  } else {
+    document.getElementById('overlay').querySelector('h1').textContent = '🐧 Telpinguïns! 🐧';
+    document.getElementById('overlay').querySelectorAll('p')[0].textContent = 'Tel de pinguïns terwijl ze over het ijs lopen!';
+    document.getElementById('overlay-stars').textContent = '⭐⭐⭐';
+    document.getElementById('overlay-score').textContent = '';
+    document.getElementById('restart-btn').textContent = 'Spelen! 🎮';
+  }
+}
+
+// ─── Round logic ──────────────────────────────────────────────────────────────
+function startRound() {
+  const maxCount = round < 5 ? 5 : 10;
+  correctAnswer = 1 + Math.floor(Math.random() * maxCount);
+  spawnCount = correctAnswer;
+  spawnIndex = 0;
+  spawnTimer = 0;
+  penguins = [];
+  splashEffects = [];
+  confettiParticles = [];
+  confCtx.clearRect(0, 0, W, H);
+
+  // Stagger lanes so penguins don't overlap
+  const lanePool = [-2,-1,0,1,2,3];
+  const usedLanes = [];
+  for (let i = 0; i < spawnCount; i++) {
+    let lane = lanePool[i % lanePool.length];
+    usedLanes.push(lane);
+  }
+
+  // Create penguins (start off-screen left, staggered)
+  for (let i = 0; i < spawnCount; i++) {
+    const p = new Penguin(-60 - i * 90, usedLanes[i]);
+    p.myNumber = i + 1;
+    // Set a stop position staggered across ice
+    p.stopX = 60 + (i / spawnCount) * 420 + Math.random() * 40;
+    penguins.push(p);
+  }
+
+  gamePhase = 'spawning';
+  setMessage('🐧 Kijk goed! Tel de pinguïns!');
+  clearButtons();
+  updateHUD();
+}
+
+function generateOptions(correct) {
+  const opts = new Set([correct]);
+  const maxVal = round < 5 ? 5 : 10;
+  while (opts.size < 3) {
+    let o = 1 + Math.floor(Math.random() * maxVal);
+    if (o !== correct) opts.add(o);
+  }
+  // Shuffle
+  return [...opts].sort(() => Math.random() - 0.5);
+}
+
+function beginAnswering() {
+  gamePhase = 'answering';
+  setMessage('Hoeveel pinguïns zag jij? Kies het goede getal!');
+  const opts = generateOptions(correctAnswer);
+  createAnswerButtons(opts, correctAnswer);
+}
+
+// ─── Main loop ────────────────────────────────────────────────────────────────
+let lastTime = 0;
+
+function gameLoop(ts) {
+  const dt = Math.min(ts - lastTime, 50);
+  lastTime = ts;
+
+  // Update penguins
+  for (const p of penguins) p.update(dt);
+
+  // Phase logic
+  if (gamePhase === 'spawning') {
+    spawnTimer++;
+    // Each penguin starts moving from left; once it reaches stopX it stops
+    for (const p of penguins) {
+      if (!p.reached && p.x >= p.stopX) {
+        p.reached = true;
+        p.stopped = true;
+        // Show count bubble
+        p.countBubble = 40;
+        playCountBeep(p.myNumber);
+        playWaddle();
+      }
+    }
+
+    // Check if all have arrived
+    const allArrived = penguins.every(p => p.reached);
+    if (allArrived) {
+      // Start countdown
+      gamePhase = 'counting';
+      countdownVal = 3;
+      countTimer = 60;
+    }
+  }
+
+  if (gamePhase === 'counting') {
+    countTimer--;
+    if (countTimer <= 0) {
+      countdownVal--;
+      if (countdownVal <= 0) {
+        // Penguins jump into water
+        gamePhase = 'splashing';
+        for (const p of penguins) {
+          p.stopped = false;
+          p.vx = 2.5 + Math.random() * 1.5;
+        }
+        setMessage('Splash! Snel, hoeveel waren het er?');
+        setTimeout(() => {
+          // After penguins run off, ask question
+          beginAnswering();
+        }, 1400);
+      } else {
+        countTimer = 60;
+        if (countdownVal === 2) playTone(660, 'sine', 0.1);
+        if (countdownVal === 1) playTone(880, 'sine', 0.1);
+      }
+    }
+  }
+
+  if (gamePhase === 'splashing') {
+    // penguins walk toward water (right side)
+    // When they reach water area they splash
+    for (const p of penguins) {
+      if (!p.splashing && p.x >= W * 0.76) {
+        p.splashing = true;
+        p.splashTimer = 30;
+        playSplash();
+      }
+    }
+  }
+
+  if (gamePhase === 'feedback') {
+    feedbackTimer--;
+    if (feedbackTimer <= 0) {
+      round++;
+      if (round >= 10) {
+        gamePhase = 'ending';
+        setTimeout(() => showOverlay(true), 400);
+      } else {
+        startRound();
+      }
+    }
+  }
+
+  // Draw
+  drawScene();
+  updateConfetti();
+
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+// ─── Start game ───────────────────────────────────────────────────────────────
+function startGame() {
+  ensureAudio();
+  round = 0;
+  score = 0;
+  totalStars = 0;
+  penguins = [];
+  confettiParticles = [];
+  confCtx.clearRect(0, 0, W, H);
+
+  document.getElementById('overlay').classList.add('hidden');
+  updateHUD();
+  startRound();
+
+  if (animFrame) cancelAnimationFrame(animFrame);
+  lastTime = performance.now();
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+// Start loop for animated background even before game starts
+(function bgLoop(ts) {
+  if (gamePhase === 'idle') {
+    drawScene();
+    updateConfetti();
+  }
+  requestAnimationFrame(bgLoop);
+})(0);
+
+// Show start overlay
+showOverlay(false);
+</script>
+</body>
+</html>
