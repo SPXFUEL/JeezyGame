@@ -6,445 +6,488 @@
 <title>Groepjes Tellen</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #1a1a2e;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
+  html, body {
+    width: 100%; height: 100%;
+    background: #0f3460;
+    display: flex; align-items: center; justify-content: center;
     overflow: hidden;
     font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
   }
-  canvas { display: block; touch-action: none; }
+  #wrapper {
+    position: relative;
+    width: 390px; height: 700px;
+  }
+  canvas {
+    display: block;
+    width: 390px; height: 700px;
+    border-radius: 24px;
+    cursor: pointer;
+    touch-action: none;
+  }
 </style>
 </head>
 <body>
-<canvas id="game" width="390" height="700"></canvas>
+<div id="wrapper">
+<canvas id="c" width="390" height="700"></canvas>
+</div>
 <script>
-const canvas = document.getElementById('game');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const W = 390, H = 700;
 
-// --- State ---
-const TOTAL_ROUNDS = 10;
-let round = 0;
-let score = 0;
-let correctAnswer = 0;
-let answerButtons = [];
-let objects = [];
-let phase = 'playing'; // 'playing' | 'feedback' | 'done'
-let feedbackText = '';
-let feedbackColor = '';
-let feedbackTimer = 0;
-let stars = [];
-let bgHue = 200;
+// ── Audio ──────────────────────────────────────────────────────────────────────
+let AC;
+function getAC() {
+  if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+  return AC;
+}
 
-// Object sets
-const SETS = [
-  { emoji: '🍎', name: 'appels' },
-  { emoji: '⭐', name: 'sterren' },
-  { emoji: '🎈', name: 'ballonnen' },
-  { emoji: '🍭', name: 'lollies' },
-  { emoji: '🦋', name: 'vlinders' },
-  { emoji: '🍊', name: 'sinaasappels' },
-  { emoji: '🌸', name: 'bloemen' },
-  { emoji: '🐸', name: 'kikkers' },
-  { emoji: '🍓', name: 'aardbeien' },
-  { emoji: '🚀', name: 'raketten' },
+function playTone(freq, type, dur, vol, delay) {
+  const ac = getAC();
+  const t = ac.currentTime + (delay || 0);
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.connect(gain); gain.connect(ac.destination);
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, t);
+  gain.gain.setValueAtTime(vol || 0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.start(t); osc.stop(t + dur + 0.05);
+}
+
+function soundCorrect() {
+  [523, 659, 784, 1047].forEach((f, i) => playTone(f, 'sine', 0.18, 0.25, i * 0.1));
+}
+function soundWrong() {
+  playTone(300, 'sawtooth', 0.15, 0.2, 0);
+  playTone(250, 'sawtooth', 0.15, 0.2, 0.15);
+}
+function soundBloop(i) {
+  playTone(440 * Math.pow(1.12, i), 'sine', 0.12, 0.15, i * 0.12);
+}
+
+// ── Object drawers ─────────────────────────────────────────────────────────────
+
+function drawApple(cx, cy, sc, rot) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+  ctx.beginPath(); ctx.arc(0, 3, 19, 0, Math.PI * 2);
+  ctx.fillStyle = '#e74c3c'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.arc(-6, -5, 6, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.fill();
+  ctx.fillStyle = '#7d4f0f'; ctx.fillRect(-2, -20, 3, 10);
+  ctx.beginPath();
+  ctx.moveTo(1, -17); ctx.bezierCurveTo(8, -27, 19, -21, 13, -13);
+  ctx.bezierCurveTo(7, -11, 1, -14, 1, -17);
+  ctx.fillStyle = '#27ae60'; ctx.fill();
+  ctx.restore();
+}
+
+function drawStar(cx, cy, sc, rot) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (i * Math.PI) / 5 - Math.PI / 2;
+    const r = i % 2 === 0 ? 21 : 9;
+    if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#f1c40f'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.arc(-3, -5, 5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fill();
+  ctx.restore();
+}
+
+function drawBall(cx, cy, sc, rot, color) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+  ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2);
+  ctx.fillStyle = color; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.arc(-6, -6, 7, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
+  ctx.restore();
+}
+
+function drawHeart(cx, cy, sc, rot) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 8);
+  ctx.bezierCurveTo(-18, -3, -21, -15, -10, -18);
+  ctx.bezierCurveTo(-4, -21, 0, -16, 0, -12);
+  ctx.bezierCurveTo(0, -16, 4, -21, 10, -18);
+  ctx.bezierCurveTo(21, -15, 18, -3, 0, 8);
+  ctx.closePath();
+  ctx.fillStyle = '#e91e8c'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.arc(-7, -12, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fill();
+  ctx.restore();
+}
+
+function drawTriangle(cx, cy, sc, rot, color) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -21); ctx.lineTo(19, 17); ctx.lineTo(-19, 17);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath();
+  ctx.moveTo(0, -16); ctx.lineTo(-5, -4); ctx.lineTo(5, -4);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
+  ctx.restore();
+}
+
+const BALL_COLORS = ['#3498db','#e67e22','#1abc9c','#e74c3c','#9b59b6','#16a085'];
+const TRI_COLORS  = ['#9b59b6','#e74c3c','#3498db','#1abc9c','#e67e22','#2c3e50'];
+
+const OBJECT_TYPES = [
+  (cx, cy, sc, r) => drawApple(cx, cy, sc, r),
+  (cx, cy, sc, r) => drawStar(cx, cy, sc, r),
+  null, // ball — color chosen per round
+  (cx, cy, sc, r) => drawHeart(cx, cy, sc, r),
+  null, // triangle — color chosen per round
 ];
 
-// Background stars
-for (let i = 0; i < 40; i++) {
-  stars.push({
-    x: Math.random() * 390,
-    y: Math.random() * 700,
-    r: Math.random() * 2 + 0.5,
-    twinkle: Math.random() * Math.PI * 2,
-    speed: Math.random() * 0.03 + 0.01,
-  });
-}
+// ── Game state ─────────────────────────────────────────────────────────────────
+const TOTAL_ROUNDS = 10;
+const BTN_COLORS = ['#e74c3c','#e67e22','#f1c40f','#27ae60','#3498db'];
+const BTN_DARK   = ['#c0392b','#d35400','#d4ac0d','#1e8449','#2471a3'];
 
-// Floating object
-function FloatingObj(x, y, emoji, index) {
-  this.x = x;
-  this.y = y;
-  this.targetY = y;
-  this.startY = y - 60;
-  this.emoji = emoji;
-  this.size = 54;
-  this.phase = (index * 0.6);
-  this.amplitude = 8 + Math.random() * 6;
-  this.speed = 0.035 + Math.random() * 0.02;
-  this.t = 0;
-  this.alpha = 0;
-  this.entered = false;
-}
-FloatingObj.prototype.update = function() {
-  this.t += this.speed;
-  if (this.alpha < 1) this.alpha = Math.min(1, this.alpha + 0.06);
-};
-FloatingObj.prototype.draw = function() {
-  ctx.save();
-  ctx.globalAlpha = this.alpha;
-  const bobY = Math.sin(this.t + this.phase) * this.amplitude;
-  ctx.font = this.size + 'px serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(this.emoji, this.x, this.y + bobY);
-  ctx.restore();
-};
+let gameState = 'start';
+let round = 0, score = 0;
+let currentCount = 1;
+let drawObj = null; // function(cx, cy, sc, rot)
+let objects = [];
+let animFrame = 0;
+let resultState = null;
+let resultTimer = 0;
+let btnFlash = -1, btnFlashTimer = 0;
+let endParticles = [];
 
-// Answer button
-function AnswerBtn(x, y, w, h, label) {
-  this.x = x; this.y = y; this.w = w; this.h = h;
-  this.label = label;
-  this.scale = 1;
-  this.targetScale = 1;
-  this.color = '#f7c948';
-  this.pressed = false;
-}
-AnswerBtn.prototype.draw = function() {
-  ctx.save();
-  const cx = this.x + this.w / 2;
-  const cy = this.y + this.h / 2;
-  ctx.translate(cx, cy);
-  ctx.scale(this.scale, this.scale);
-  ctx.translate(-this.w / 2, -this.h / 2);
-  // Shadow
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = 12;
-  ctx.shadowOffsetY = 4;
-  // Button body
-  ctx.beginPath();
-  roundRect(ctx, 0, 0, this.w, this.h, 22);
-  ctx.fillStyle = this.color;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  // Border
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  // Label
-  ctx.fillStyle = '#1a1a2e';
-  ctx.font = 'bold 44px Arial Rounded MT Bold, Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(this.label, this.w / 2, this.h / 2 + 2);
-  ctx.restore();
-};
-AnswerBtn.prototype.contains = function(px, py) {
-  return px >= this.x && px <= this.x + this.w &&
-         py >= this.y && py <= this.y + this.h;
-};
+// ── Layout constants ───────────────────────────────────────────────────────────
+const PROG_Y = 28, PROG_H = 16;
+const HUD_Y  = 58;
+const OBJ_TOP = 85, OBJ_BOTTOM = 430;
+const BTN_Y   = 540, BTN_R = 38, BTN_GAP = 68;
 
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
+function btnCX(i) { return W / 2 + (i - 2) * BTN_GAP; }
 
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+// ── Placement ──────────────────────────────────────────────────────────────────
+function generatePositions(count) {
+  const pos = [], R = 38;
+  const mx = 52, Mx = W - 52, my = OBJ_TOP + R, My = OBJ_BOTTOM - R;
+  let tries = 0;
+  while (pos.length < count && tries < 800) {
+    tries++;
+    const x = mx + Math.random() * (Mx - mx);
+    const y = my + Math.random() * (My - my);
+    let ok = true;
+    for (const p of pos) {
+      const dx = p.x - x, dy = p.y - y;
+      if (dx * dx + dy * dy < R * R * 4) { ok = false; break; }
+    }
+    if (ok) pos.push({ x, y });
   }
-  return arr;
+  return pos;
 }
 
-function startRound() {
-  phase = 'playing';
-  feedbackText = '';
-  objects = [];
-  answerButtons = [];
-
-  const set = SETS[round % SETS.length];
-  correctAnswer = Math.floor(Math.random() * 5) + 1;
-
-  // Layout: spread objects nicely
-  const positions = buildPositions(correctAnswer);
-  for (let i = 0; i < correctAnswer; i++) {
-    objects.push(new FloatingObj(positions[i].x, positions[i].y, set.emoji, i));
-  }
-
-  // Wrong answers: pick 2 unique wrongs
-  let wrongs = [];
-  while (wrongs.length < 2) {
-    const w = Math.floor(Math.random() * 5) + 1;
-    if (w !== correctAnswer && !wrongs.includes(w)) wrongs.push(w);
-  }
-  const choices = shuffle([correctAnswer, wrongs[0], wrongs[1]]);
-
-  const btnW = 100, btnH = 90;
-  const totalW = 3 * btnW + 2 * 16;
-  const startX = (390 - totalW) / 2;
-  const btnY = 590;
-  for (let i = 0; i < 3; i++) {
-    answerButtons.push(new AnswerBtn(startX + i * (btnW + 16), btnY, btnW, btnH, choices[i]));
-  }
-}
-
-function buildPositions(count) {
-  // Grid-ish layout in the upper area
-  const area = { x: 40, y: 130, w: 310, h: 320 };
-  const positions = [];
-  if (count === 1) {
-    positions.push({ x: 195, y: area.y + 140 });
-  } else if (count === 2) {
-    positions.push({ x: 120, y: area.y + 130 });
-    positions.push({ x: 270, y: area.y + 130 });
-  } else if (count === 3) {
-    positions.push({ x: 195, y: area.y + 60 });
-    positions.push({ x: 100, y: area.y + 220 });
-    positions.push({ x: 290, y: area.y + 220 });
-  } else if (count === 4) {
-    positions.push({ x: 110, y: area.y + 70 });
-    positions.push({ x: 280, y: area.y + 70 });
-    positions.push({ x: 110, y: area.y + 230 });
-    positions.push({ x: 280, y: area.y + 230 });
+// ── New round ──────────────────────────────────────────────────────────────────
+function newRound() {
+  round++;
+  currentCount = 1 + Math.floor(Math.random() * 5);
+  const ti = Math.floor(Math.random() * OBJECT_TYPES.length);
+  if (ti === 2) {
+    const col = BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)];
+    drawObj = (cx, cy, sc, r) => drawBall(cx, cy, sc, r, col);
+  } else if (ti === 4) {
+    const col = TRI_COLORS[Math.floor(Math.random() * TRI_COLORS.length)];
+    drawObj = (cx, cy, sc, r) => drawTriangle(cx, cy, sc, r, col);
   } else {
-    positions.push({ x: 195, y: area.y + 40 });
-    positions.push({ x: 80,  y: area.y + 160 });
-    positions.push({ x: 310, y: area.y + 160 });
-    positions.push({ x: 120, y: area.y + 290 });
-    positions.push({ x: 270, y: area.y + 290 });
+    drawObj = OBJECT_TYPES[ti];
   }
-  return positions;
+  const pos = generatePositions(currentCount);
+  objects = pos.map((p, i) => ({
+    x: p.x, y: p.y,
+    rot: (Math.random() - 0.5) * 0.52,
+    scale: 0, delay: i * 7, bloopDone: false,
+  }));
+  resultState = null; resultTimer = 0;
+  btnFlash = -1; animFrame = 0;
 }
 
-function checkAnswer(btn) {
-  if (phase !== 'playing') return;
-  if (btn.label === correctAnswer) {
-    score++;
-    feedbackText = '⭐ Goed zo!';
-    feedbackColor = '#5ef065';
-    btn.color = '#5ef065';
-  } else {
-    feedbackText = '😊 Probeer nog!';
-    feedbackColor = '#ff6b6b';
-    btn.color = '#ff6b6b';
-    // Highlight correct
-    for (let b of answerButtons) {
-      if (b.label === correctAnswer) b.color = '#5ef065';
+// ── Particles ──────────────────────────────────────────────────────────────────
+const PCOLS = ['#e74c3c','#f1c40f','#27ae60','#3498db','#e67e22','#9b59b6','#1abc9c'];
+function spawnEndParticles() {
+  endParticles = Array.from({length: 70}, () => ({
+    x: Math.random() * W, y: -10 - Math.random() * 100,
+    vx: (Math.random() - 0.5) * 3.5, vy: 2.5 + Math.random() * 4,
+    w: 7 + Math.random() * 10, h: 5 + Math.random() * 7,
+    rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.22,
+    color: PCOLS[Math.floor(Math.random() * PCOLS.length)],
+  }));
+}
+function updateParticles() {
+  for (const p of endParticles) {
+    p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+    if (p.y > H + 20) { p.y = -10; p.x = Math.random() * W; }
+  }
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────────
+function handleClick(ex, ey) {
+  if (AC && AC.state === 'suspended') AC.resume();
+  if (!AC) getAC();
+
+  if (gameState === 'start') {
+    gameState = 'playing'; round = 0; score = 0; newRound(); return;
+  }
+  if (gameState === 'end') {
+    gameState = 'start'; endParticles = []; return;
+  }
+  if (gameState !== 'playing') return;
+
+  for (let i = 0; i < 5; i++) {
+    const bx = btnCX(i), by = BTN_Y;
+    const dx = ex - bx, dy = ey - by;
+    if (dx * dx + dy * dy < BTN_R * BTN_R) {
+      const ans = i + 1;
+      btnFlash = i; btnFlashTimer = 20;
+      if (ans === currentCount) {
+        score++; resultState = 'correct'; soundCorrect();
+      } else {
+        resultState = 'wrong'; soundWrong();
+      }
+      resultTimer = 65; gameState = 'result'; return;
     }
   }
-  phase = 'feedback';
-  feedbackTimer = 80;
 }
 
-function drawBackground() {
-  // Gradient sky
-  const grad = ctx.createLinearGradient(0, 0, 0, 700);
-  grad.addColorStop(0, '#0f0c29');
-  grad.addColorStop(1, '#302b63');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 390, 700);
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  const sx = canvas.width / r.width, sy = canvas.height / r.height;
+  handleClick((e.clientX - r.left) * sx, (e.clientY - r.top) * sy);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const sx = canvas.width / r.width, sy = canvas.height / r.height;
+  const t = e.touches[0];
+  handleClick((t.clientX - r.left) * sx, (t.clientY - r.top) * sy);
+}, { passive: false });
 
-  // Twinkling stars
-  for (let s of stars) {
-    s.twinkle += s.speed;
-    const alpha = 0.4 + 0.6 * Math.abs(Math.sin(s.twinkle));
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
+// ── Draw helpers ───────────────────────────────────────────────────────────────
+function drawBg() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0f3460'); g.addColorStop(1, '#16213e');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 }
 
 function drawHUD() {
-  // Round indicator
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.beginPath();
-  roundRect(ctx, 16, 16, 165, 52, 26);
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 20px Arial Rounded MT Bold, Arial';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('Ronde ' + (round + 1) + ' / ' + TOTAL_ROUNDS, 30, 42);
-  ctx.restore();
-
-  // Score stars
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.beginPath();
-  roundRect(ctx, 209, 16, 165, 52, 26);
-  ctx.fill();
-  ctx.font = 'bold 20px Arial Rounded MT Bold, Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#f7c948';
-  ctx.fillText('⭐ ' + score, 291, 42);
-  ctx.restore();
-
-  // Question
-  const set = SETS[round % SETS.length];
-  ctx.save();
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 26px Arial Rounded MT Bold, Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 8;
-  ctx.fillText('Hoeveel ' + set.name + '?', 195, 98);
-  ctx.restore();
+  // Progress bar
+  const bx = 22, bw = W - 44;
+  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  ctx.beginPath(); ctx.roundRect(bx, PROG_Y - PROG_H / 2, bw, PROG_H, 8); ctx.fill();
+  const prog = Math.max(0, (round - 1) / TOTAL_ROUNDS);
+  if (prog > 0) {
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+    g.addColorStop(0, '#f1c40f'); g.addColorStop(1, '#e67e22');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(bx, PROG_Y - PROG_H / 2, bw * prog, PROG_H, 8); ctx.fill();
+  }
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'left'; ctx.fillText(`Ronde ${round} / ${TOTAL_ROUNDS}`, 22, HUD_Y);
+  ctx.textAlign = 'right'; ctx.fillText(`Score: ${score}`, W - 22, HUD_Y);
 }
 
-function drawFeedback() {
-  if (!feedbackText) return;
-  ctx.save();
-  ctx.globalAlpha = Math.min(1, feedbackTimer / 20);
-  ctx.font = 'bold 48px serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.6)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = feedbackColor;
-  ctx.fillText(feedbackText, 195, 530);
-  ctx.restore();
+function drawObjects() {
+  for (let i = 0; i < objects.length; i++) {
+    const o = objects[i];
+    if (animFrame < o.delay) continue;
+    const el = animFrame - o.delay;
+    if (el === 0 && !o.bloopDone) { soundBloop(i); o.bloopDone = true; }
+    if (el < 10) {
+      const t = el / 10;
+      // ease-out-back
+      const c1 = 1.70158, c3 = c1 + 1;
+      o.scale = 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    } else {
+      o.scale = 1;
+    }
+    drawObj(o.x, o.y, Math.max(0, o.scale), o.rot);
+  }
 }
 
-function drawDone() {
-  ctx.save();
-  const grad = ctx.createLinearGradient(0, 0, 0, 700);
-  grad.addColorStop(0, '#0f0c29');
-  grad.addColorStop(1, '#302b63');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 390, 700);
-  for (let s of stars) {
-    s.twinkle += s.speed;
-    const alpha = 0.4 + 0.6 * Math.abs(Math.sin(s.twinkle));
-    ctx.globalAlpha = alpha;
+function drawButtons() {
+  for (let i = 0; i < 5; i++) {
+    const bx = btnCX(i), by = BTN_Y;
+    const flash = btnFlash === i && btnFlashTimer > 0;
+    const r = flash ? BTN_R * 1.18 : BTN_R;
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
+    ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fillStyle = flash ? BTN_DARK[i] : BTN_COLORS[i]; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath(); ctx.arc(bx - r * 0.24, by - r * 0.26, r * 0.34, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.font = `bold ${flash ? 30 : 26}px Arial`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(i + 1, bx, by + 1);
+    ctx.textBaseline = 'alphabetic';
   }
-  ctx.globalAlpha = 1;
-
-  ctx.font = '80px serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('🎉', 195, 200);
-
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 38px Arial Rounded MT Bold, Arial';
-  ctx.fillText('Geweldig!', 195, 300);
-  ctx.font = 'bold 28px Arial Rounded MT Bold, Arial';
-  ctx.fillStyle = '#f7c948';
-  ctx.fillText(score + ' van de ' + TOTAL_ROUNDS + ' goed!', 195, 360);
-
-  ctx.font = '50px serif';
-  const medal = score >= 8 ? '🥇' : score >= 5 ? '🥈' : '🥉';
-  ctx.fillText(medal, 195, 450);
-
-  // Replay button
-  ctx.fillStyle = '#f7c948';
-  ctx.shadowColor = 'rgba(0,0,0,0.3)';
-  ctx.shadowBlur = 10;
-  ctx.beginPath();
-  roundRect(ctx, 110, 530, 170, 80, 22);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#1a1a2e';
-  ctx.font = 'bold 30px Arial Rounded MT Bold, Arial';
-  ctx.fillText('Opnieuw', 195, 572);
-  ctx.restore();
 }
 
-let replayBtn = { x: 110, y: 530, w: 170, h: 80 };
+function drawResultOverlay() {
+  const alpha = Math.min(1, resultTimer / 18);
+  if (resultState === 'correct') {
+    ctx.fillStyle = `rgba(39,174,96,${alpha * 0.18})`; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(39,174,96,${alpha})`;
+    ctx.font = 'bold 54px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('Goed zo!', W / 2, H / 2 - 20);
+    for (let i = 0; i < 3; i++) {
+      const sx = W / 2 + (i - 1) * 64, sy = H / 2 + 50;
+      const sf = Math.max(0, Math.min(1, (resultTimer - i * 6) / 14));
+      if (sf > 0) {
+        ctx.save(); ctx.translate(sx, sy); ctx.scale(sf, sf);
+        drawStar(0, 0, 1, 0); ctx.restore();
+      }
+    }
+  } else {
+    ctx.fillStyle = `rgba(231,76,60,${alpha * 0.18})`; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(231,76,60,${alpha})`;
+    ctx.font = 'bold 46px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('Bijna!', W / 2, H / 2 - 15);
+    ctx.font = 'bold 28px Arial';
+    ctx.fillText(`Het waren er ${currentCount}`, W / 2, H / 2 + 35);
+  }
+}
 
+function drawStartScreen() {
+  drawBg();
+  // Decorative circles top
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.beginPath(); ctx.arc(60, 80, 50, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(330, 100, 35, 0, Math.PI * 2); ctx.fill();
+
+  // Title card
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  ctx.beginPath(); ctx.roundRect(28, 110, W - 56, 230, 26); ctx.fill();
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = 'bold 42px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('Groepjes', W / 2, 185);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText('Tel de Groepjes!', W / 2, 230);
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.font = '19px Arial';
+  ctx.fillText('Hoeveel dingen zie je?', W / 2, 276);
+  ctx.fillText('Kies het goede getal!', W / 2, 305);
+
+  const t = Date.now() / 1000;
+  drawApple(78, 430, 1.1, Math.sin(t * 0.9) * 0.18);
+  drawStar(160, 415, 1.1, Math.sin(t * 1.1 + 1) * 0.18);
+  drawHeart(245, 432, 1.1, Math.sin(t * 0.8 + 2) * 0.18);
+  drawBall(322, 418, 1.1, 0, '#3498db');
+
+  const pulse = 1 + Math.sin(t * 3) * 0.045;
+  ctx.save(); ctx.translate(W / 2, 595); ctx.scale(pulse, pulse);
+  ctx.shadowColor = 'rgba(241,196,15,0.55)'; ctx.shadowBlur = 22;
+  ctx.beginPath(); ctx.roundRect(-108, -32, 216, 64, 32);
+  ctx.fillStyle = '#f1c40f'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#1a1a2e'; ctx.font = 'bold 27px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('SPELEN!', 0, 1);
+  ctx.textBaseline = 'alphabetic'; ctx.restore();
+}
+
+function drawEndScreen() {
+  drawBg();
+  ctx.save();
+  for (const p of endParticles) {
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath(); ctx.roundRect(38, 150, W - 76, 300, 28); ctx.fill();
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = 'bold 46px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('Klaar!', W / 2, 228);
+
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 62px Arial';
+  ctx.fillText(`${score} / ${TOTAL_ROUNDS}`, W / 2, 320);
+
+  ctx.font = '22px Arial'; ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  const pct = score / TOTAL_ROUNDS;
+  if (pct === 1) ctx.fillText('Fantastisch! Alles goed!', W / 2, 375);
+  else if (pct >= 0.7) ctx.fillText('Heel goed gedaan!', W / 2, 375);
+  else if (pct >= 0.4) ctx.fillText('Goed geprobeerd!', W / 2, 375);
+  else ctx.fillText('Blijf oefenen!', W / 2, 375);
+
+  // Stars earned
+  const stars = pct === 1 ? 3 : pct >= 0.7 ? 2 : 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.save(); ctx.translate(W / 2 + (i - 1) * 58, 418);
+    ctx.globalAlpha = i < stars ? 1 : 0.22;
+    drawStar(0, 0, 1.1, 0);
+    ctx.restore();
+  }
+
+  const t = Date.now() / 1000;
+  const pulse = 1 + Math.sin(t * 3) * 0.045;
+  ctx.save(); ctx.translate(W / 2, 572); ctx.scale(pulse, pulse);
+  ctx.shadowColor = 'rgba(52,152,219,0.55)'; ctx.shadowBlur = 20;
+  ctx.beginPath(); ctx.roundRect(-115, -32, 230, 64, 32);
+  ctx.fillStyle = '#3498db'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 25px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Nog een keer', 0, 1);
+  ctx.textBaseline = 'alphabetic'; ctx.restore();
+}
+
+// ── Main loop ──────────────────────────────────────────────────────────────────
 function loop() {
-  requestAnimationFrame(loop);
+  ctx.clearRect(0, 0, W, H);
 
-  if (phase === 'done') {
-    drawDone();
-    return;
-  }
-
-  drawBackground();
-  drawHUD();
-
-  for (let o of objects) {
-    o.update();
-    o.draw();
-  }
-
-  for (let btn of answerButtons) {
-    // Animate scale
-    btn.scale += (btn.targetScale - btn.scale) * 0.2;
-    btn.draw();
-  }
-
-  drawFeedback();
-
-  if (phase === 'feedback') {
-    feedbackTimer--;
-    if (feedbackTimer <= 0) {
-      round++;
-      if (round >= TOTAL_ROUNDS) {
-        phase = 'done';
-      } else {
-        startRound();
+  if (gameState === 'start') {
+    drawStartScreen();
+  } else if (gameState === 'end') {
+    updateParticles();
+    drawEndScreen();
+  } else {
+    drawBg(); drawHUD(); drawObjects(); drawButtons();
+    animFrame++;
+    if (btnFlashTimer > 0) btnFlashTimer--;
+    if (gameState === 'result') {
+      drawResultOverlay();
+      resultTimer--;
+      if (resultTimer <= 0) {
+        if (round >= TOTAL_ROUNDS) { gameState = 'end'; spawnEndParticles(); }
+        else { gameState = 'playing'; newRound(); }
       }
     }
   }
+  requestAnimationFrame(loop);
 }
-
-function getPos(e) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  if (e.touches) {
-    return {
-      x: (e.touches[0].clientX - rect.left) * scaleX,
-      y: (e.touches[0].clientY - rect.top) * scaleY,
-    };
-  }
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY,
-  };
-}
-
-canvas.ontouchstart = function(e) {
-  e.preventDefault();
-  const pos = getPos(e);
-  handleTap(pos.x, pos.y);
-};
-canvas.onclick = function(e) {
-  const pos = getPos(e);
-  handleTap(pos.x, pos.y);
-};
-
-function handleTap(x, y) {
-  if (phase === 'done') {
-    if (x >= replayBtn.x && x <= replayBtn.x + replayBtn.w &&
-        y >= replayBtn.y && y <= replayBtn.y + replayBtn.h) {
-      round = 0; score = 0; startRound();
-    }
-    return;
-  }
-  if (phase !== 'playing') return;
-  for (let btn of answerButtons) {
-    if (btn.contains(x, y)) {
-      btn.targetScale = 0.9;
-      setTimeout(function() { btn.targetScale = 1; }, 120);
-      checkAnswer(btn);
-      return;
-    }
-  }
-}
-
-startRound();
 loop();
 </script>
 </body>
