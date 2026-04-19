@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Tellen tot 20</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1b2a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const TOTAL_ROUNDS = 20;
+let round = 0;
+let score = 0;
+let phase = 'counting'; // 'counting' | 'question' | 'feedback' | 'done'
+let correctAnswer = 0;
+let countDisplay = 0;
+let starsOnScreen = [];
+let answerButtons = [];
+let feedbackText = '';
+let feedbackColor = '';
+let feedbackTimer = 0;
+let countInterval = null;
+let bgStars = [];
+let particles = [];
+
+// Background twinkle stars
+for (let i = 0; i < 50; i++) {
+  bgStars.push({
+    x: Math.random() * 390,
+    y: Math.random() * 700,
+    r: Math.random() * 1.8 + 0.4,
+    phase: Math.random() * Math.PI * 2,
+    speed: Math.random() * 0.04 + 0.01,
+  });
+}
+
+// Grid positions for up to 20 stars
+function getGridPositions(n) {
+  const positions = [];
+  const cols = n <= 5 ? n : n <= 10 ? 5 : 5;
+  const rows = Math.ceil(n / cols);
+  const cellW = 60;
+  const cellH = 60;
+  const areaW = cols * cellW;
+  const areaH = rows * cellH;
+  const startX = (390 - areaW) / 2 + cellW / 2;
+  const startY = 190;
+  for (let i = 0; i < n; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    positions.push({
+      x: startX + col * cellW,
+      y: startY + row * cellH,
+    });
+  }
+  return positions;
+}
+
+function StarObj(x, y, index) {
+  this.x = x;
+  this.y = y;
+  this.startY = y - 40;
+  this.index = index;
+  this.alpha = 0;
+  this.scale = 0;
+  this.t = 0;
+  this.bob = Math.random() * Math.PI * 2;
+  this.bobSpeed = 0.04 + Math.random() * 0.02;
+  this.hue = 40 + Math.random() * 30;
+  this.born = false;
+}
+StarObj.prototype.update = function() {
+  this.t += this.bobSpeed;
+  if (this.scale < 1) this.scale = Math.min(1, this.scale + 0.1);
+  if (this.alpha < 1) this.alpha = Math.min(1, this.alpha + 0.08);
+};
+StarObj.prototype.draw = function() {
+  ctx.save();
+  ctx.globalAlpha = this.alpha;
+  const bobY = Math.sin(this.t + this.bob) * 5;
+  ctx.translate(this.x, this.y + bobY);
+  ctx.scale(this.scale, this.scale);
+  drawStar5(ctx, 0, 0, 20, 10, this.hue);
+  ctx.restore();
+};
+
+function drawStar5(ctx, cx, cy, outer, inner, hue) {
+  const spikes = 5;
+  const step = Math.PI / spikes;
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const angle = i * step - Math.PI / 2;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'hsl(' + hue + ', 100%, 65%)';
+  ctx.shadowColor = 'hsl(' + hue + ', 100%, 80%)';
+  ctx.shadowBlur = 12;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+function Particle(x, y) {
+  this.x = x; this.y = y;
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 2 + Math.random() * 4;
+  this.vx = Math.cos(angle) * speed;
+  this.vy = Math.sin(angle) * speed - 2;
+  this.life = 1;
+  this.hue = Math.random() * 360;
+  this.r = 4 + Math.random() * 4;
+}
+Particle.prototype.update = function() {
+  this.x += this.vx;
+  this.y += this.vy;
+  this.vy += 0.15;
+  this.life -= 0.03;
+};
+Particle.prototype.draw = function() {
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, this.life);
+  ctx.fillStyle = 'hsl(' + this.hue + ', 100%, 65%)';
+  ctx.beginPath();
+  ctx.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+};
+
+function AnswerBtn(x, y, w, h, label) {
+  this.x = x; this.y = y; this.w = w; this.h = h;
+  this.label = label;
+  this.scale = 1;
+  this.color = '#f7c948';
+  this.glow = 0;
+}
+AnswerBtn.prototype.draw = function() {
+  ctx.save();
+  const cx = this.x + this.w / 2;
+  const cy = this.y + this.h / 2;
+  ctx.translate(cx, cy);
+  ctx.scale(this.scale, this.scale);
+  ctx.translate(-this.w / 2, -this.h / 2);
+  ctx.shadowColor = this.color;
+  ctx.shadowBlur = 8 + this.glow * 20;
+  ctx.beginPath();
+  roundRect(ctx, 0, 0, this.w, this.h, 20);
+  ctx.fillStyle = this.color;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#1a1a2e';
+  ctx.font = 'bold 40px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(this.label, this.w / 2, this.h / 2 + 2);
+  ctx.restore();
+};
+AnswerBtn.prototype.contains = function(px, py) {
+  return px >= this.x && px <= this.x + this.w &&
+         py >= this.y && py <= this.y + this.h;
+};
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startRound() {
+  phase = 'counting';
+  starsOnScreen = [];
+  answerButtons = [];
+  feedbackText = '';
+  countDisplay = 0;
+  particles = [];
+
+  // Rounds 1-10: count up to 10; rounds 11-20: count up to 20
+  const maxCount = round < 10 ? 10 : 20;
+  correctAnswer = Math.floor(Math.random() * maxCount) + 1;
+
+  const positions = getGridPositions(correctAnswer);
+  let idx = 0;
+
+  function addNextStar() {
+    if (idx >= correctAnswer) {
+      // Done counting, wait then show question
+      setTimeout(showQuestion, 600);
+      return;
+    }
+    countDisplay = idx + 1;
+    const s = new StarObj(positions[idx].x, positions[idx].y, idx);
+    starsOnScreen.push(s);
+    // Burst particles at star position
+    for (let p = 0; p < 6; p++) {
+      particles.push(new Particle(positions[idx].x, positions[idx].y));
+    }
+    idx++;
+    setTimeout(addNextStar, 300);
+  }
+
+  setTimeout(addNextStar, 400);
+}
+
+function showQuestion() {
+  phase = 'question';
+  answerButtons = [];
+
+  const maxCount = round < 10 ? 10 : 20;
+  let wrongs = [];
+  while (wrongs.length < 2) {
+    const w = Math.floor(Math.random() * maxCount) + 1;
+    if (w !== correctAnswer && !wrongs.includes(w)) wrongs.push(w);
+  }
+  const choices = shuffle([correctAnswer, wrongs[0], wrongs[1]]);
+
+  const btnW = 100, btnH = 90;
+  const gap = 16;
+  const totalW = 3 * btnW + 2 * gap;
+  const startX = (390 - totalW) / 2;
+  const btnY = 590;
+  for (let i = 0; i < 3; i++) {
+    answerButtons.push(new AnswerBtn(startX + i * (btnW + gap), btnY, btnW, btnH, choices[i]));
+  }
+}
+
+function checkAnswer(btn) {
+  if (phase !== 'question') return;
+  if (btn.label === correctAnswer) {
+    score++;
+    feedbackText = '⭐ Goed zo!';
+    feedbackColor = '#5ef065';
+    btn.color = '#5ef065';
+    btn.glow = 1;
+    for (let p = 0; p < 20; p++) particles.push(new Particle(195, 400));
+  } else {
+    feedbackText = '😊 Dat waren er ' + correctAnswer + '!';
+    feedbackColor = '#ff9f43';
+    btn.color = '#ff6b6b';
+    for (let b of answerButtons) {
+      if (b.label === correctAnswer) { b.color = '#5ef065'; b.glow = 1; }
+    }
+  }
+  phase = 'feedback';
+  feedbackTimer = 90;
+}
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, 700);
+  grad.addColorStop(0, '#0d1b2a');
+  grad.addColorStop(1, '#1a3a5c');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 390, 700);
+
+  for (let s of bgStars) {
+    s.phase += s.speed;
+    const alpha = 0.3 + 0.7 * Math.abs(Math.sin(s.phase));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  // Round pill
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath();
+  roundRect(ctx, 16, 16, 170, 50, 25);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Ronde ' + (round + 1) + ' / ' + TOTAL_ROUNDS, 30, 41);
+  ctx.restore();
+
+  // Score
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath();
+  roundRect(ctx, 204, 16, 170, 50, 25);
+  ctx.fill();
+  ctx.fillStyle = '#f7c948';
+  ctx.font = 'bold 20px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⭐ ' + score, 289, 41);
+  ctx.restore();
+
+  // Big counter
+  if (phase === 'counting' || phase === 'question' || phase === 'feedback') {
+    ctx.save();
+    const limitLabel = round < 10 ? '(tot 10)' : '(tot 20)';
+
+    // Counter background circle
+    ctx.shadowColor = '#f7c948';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = 'rgba(247,201,72,0.15)';
+    ctx.beginPath();
+    ctx.arc(195, 128, 52, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#f7c948';
+    ctx.font = 'bold 58px Arial Rounded MT Bold, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(countDisplay, 195, 128);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '16px Arial';
+    ctx.fillText(limitLabel, 195, 170);
+    ctx.restore();
+  }
+
+  // "Hoeveel sterren?" label
+  if (phase === 'question' || phase === 'feedback') {
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 26px Arial Rounded MT Bold, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 8;
+    ctx.fillText('Hoeveel sterren?', 195, 558);
+    ctx.restore();
+  }
+}
+
+function drawFeedback() {
+  if (!feedbackText || (phase !== 'feedback')) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, feedbackTimer / 20);
+  ctx.font = 'bold 36px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = feedbackColor;
+  ctx.fillText(feedbackText, 195, 525);
+  ctx.restore();
+}
+
+function drawDone() {
+  drawBackground();
+  ctx.save();
+  ctx.font = '80px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🌟', 195, 190);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px Arial Rounded MT Bold, Arial';
+  ctx.fillText('Super gedaan!', 195, 300);
+
+  ctx.font = 'bold 28px Arial Rounded MT Bold, Arial';
+  ctx.fillStyle = '#f7c948';
+  ctx.fillText(score + ' van de ' + TOTAL_ROUNDS + ' goed!', 195, 360);
+
+  const pct = score / TOTAL_ROUNDS;
+  ctx.font = '60px serif';
+  ctx.fillText(pct >= 0.8 ? '🥇' : pct >= 0.5 ? '🥈' : '🥉', 195, 460);
+
+  // Replay btn
+  ctx.shadowColor = 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#f7c948';
+  ctx.beginPath();
+  roundRect(ctx, 110, 530, 170, 80, 22);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0d1b2a';
+  ctx.font = 'bold 30px Arial Rounded MT Bold, Arial';
+  ctx.fillText('Opnieuw', 195, 572);
+  ctx.restore();
+}
+
+let replayBtn = { x: 110, y: 530, w: 170, h: 80 };
+
+function loop() {
+  requestAnimationFrame(loop);
+
+  if (phase === 'done') {
+    drawDone();
+    // Idle particles
+    if (Math.random() < 0.3) particles.push(new Particle(195 + (Math.random()-0.5)*200, 460));
+    for (let i = particles.length - 1; i >= 0; i--) {
+      particles[i].update();
+      particles[i].draw();
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+    return;
+  }
+
+  drawBackground();
+
+  // Update / draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw();
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  for (let s of starsOnScreen) {
+    s.update();
+    s.draw();
+  }
+
+  drawHUD();
+
+  for (let btn of answerButtons) {
+    if (btn.glow > 0) btn.glow = Math.max(0, btn.glow - 0.04);
+    btn.draw();
+  }
+
+  drawFeedback();
+
+  if (phase === 'feedback') {
+    feedbackTimer--;
+    if (feedbackTimer <= 0) {
+      round++;
+      if (round >= TOTAL_ROUNDS) {
+        phase = 'done';
+      } else {
+        startRound();
+      }
+    }
+  }
+}
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  if (e.touches) {
+    return {
+      x: (e.touches[0].clientX - rect.left) * scaleX,
+      y: (e.touches[0].clientY - rect.top) * scaleY,
+    };
+  }
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY,
+  };
+}
+
+canvas.ontouchstart = function(e) {
+  e.preventDefault();
+  const pos = getPos(e);
+  handleTap(pos.x, pos.y);
+};
+canvas.onclick = function(e) {
+  const pos = getPos(e);
+  handleTap(pos.x, pos.y);
+};
+
+function handleTap(x, y) {
+  if (phase === 'done') {
+    if (x >= replayBtn.x && x <= replayBtn.x + replayBtn.w &&
+        y >= replayBtn.y && y <= replayBtn.y + replayBtn.h) {
+      round = 0; score = 0; startRound();
+    }
+    return;
+  }
+  if (phase !== 'question') return;
+  for (let btn of answerButtons) {
+    if (btn.contains(x, y)) {
+      btn.scale = 0.92;
+      setTimeout(function() { btn.scale = 1; }, 120);
+      checkAnswer(btn);
+      return;
+    }
+  }
+}
+
+startRound();
+loop();
+</script>
+</body>
+</html>
