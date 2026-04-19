@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Vormen Matchen</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0d0d;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const TOTAL_ROUNDS = 10;
+let round = 0;
+let score = 0;
+let phase = 'start';   // start | question | feedback | end
+let animFrame = 0;
+let particles = [];
+
+// Falling shape state
+let fallingShape = null;    // { type, color, x, y, size }
+let shapeSelected = false;  // has the player tapped the falling shape?
+let silhouettes = [];       // array of { type, x, y, size }
+let correctType = null;
+
+// Feedback
+let feedbackCorrect = false;
+let feedbackTimer = null;
+
+// Buttons
+let startBtn   = { x: 95,  y: 520, w: 200, h: 70 };
+let replayBtn  = { x: 95,  y: 560, w: 200, h: 70 };
+
+// ─── Shapes ───────────────────────────────────────────────────────────────────
+const SHAPES = ['circle', 'square', 'triangle', 'star', 'heart'];
+const SHAPE_NAMES = {
+  circle:   'Cirkel',
+  square:   'Vierkant',
+  triangle: 'Driehoek',
+  star:     'Ster',
+  heart:    'Hart'
+};
+const COLORS = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff','#ff9f1c'];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+// ─── Draw shape helper ────────────────────────────────────────────────────────
+// cx,cy = center, size = half-width roughly
+function drawShape(type, cx, cy, size, fillColor, strokeColor, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  ctx.beginPath();
+
+  if (type === 'circle') {
+    ctx.arc(cx, cy, size, 0, Math.PI * 2);
+
+  } else if (type === 'square') {
+    ctx.rect(cx - size, cy - size, size * 2, size * 2);
+
+  } else if (type === 'triangle') {
+    ctx.moveTo(cx, cy - size);
+    ctx.lineTo(cx + size, cy + size);
+    ctx.lineTo(cx - size, cy + size);
+    ctx.closePath();
+
+  } else if (type === 'star') {
+    for (let i = 0; i < 5; i++) {
+      const outerA = (i * 4 * Math.PI / 5) - Math.PI / 2;
+      const innerA = outerA + Math.PI / 5;
+      if (i === 0) ctx.moveTo(cx + Math.cos(outerA)*size, cy + Math.sin(outerA)*size);
+      else         ctx.lineTo(cx + Math.cos(outerA)*size, cy + Math.sin(outerA)*size);
+      ctx.lineTo(cx + Math.cos(innerA)*size*0.4, cy + Math.sin(innerA)*size*0.4);
+    }
+    ctx.closePath();
+
+  } else if (type === 'heart') {
+    const s = size * 0.9;
+    ctx.moveTo(cx, cy + s * 0.3);
+    ctx.bezierCurveTo(cx,         cy - s*0.2, cx - s,     cy - s*0.8, cx - s,   cy - s*0.2);
+    ctx.bezierCurveTo(cx - s,     cy + s*0.3, cx,         cy + s*0.8, cx,       cy + s*0.8);
+    ctx.bezierCurveTo(cx,         cy + s*0.8, cx + s,     cy + s*0.3, cx + s,   cy - s*0.2);
+    ctx.bezierCurveTo(cx + s,     cy - s*0.8, cx,         cy - s*0.2, cx,       cy + s*0.3);
+    ctx.closePath();
+  }
+
+  if (fillColor) {
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+  }
+  if (strokeColor) {
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = strokeColor === '#fff' ? 4 : 5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ─── Round setup ─────────────────────────────────────────────────────────────
+function newRound() {
+  const shuffled = shuffle(SHAPES);
+  correctType = shuffled[0];
+  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+  fallingShape = {
+    type: correctType,
+    color: color,
+    x: 195,
+    y: 200,
+    size: 52,
+    bobOffset: 0
+  };
+  shapeSelected = false;
+
+  // 4 silhouettes at the bottom (correct + 3 others)
+  const siTypes = [correctType, shuffled[1], shuffled[2], shuffled[3]];
+  const shuffledSi = shuffle(siTypes);
+  silhouettes = [];
+  const spacing = 390 / 4;
+  shuffledSi.forEach((t, i) => {
+    silhouettes.push({
+      type: t,
+      x: spacing * i + spacing / 2,
+      y: 590,
+      size: 38
+    });
+  });
+
+  particles = [];
+  phase = 'question';
+}
+
+// ─── Particles ───────────────────────────────────────────────────────────────
+function spawnParticles(x, y, color) {
+  for (let i = 0; i < 25; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 6;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      r: 5 + Math.random() * 7,
+      color: `hsl(${Math.random()*360},100%,60%)`,
+      life: 1.0,
+      type: Math.random() > 0.5 ? 'circle' : 'square'
+    });
+  }
+}
+
+// ─── Drawing ──────────────────────────────────────────────────────────────────
+function drawBg() {
+  const grad = ctx.createLinearGradient(0, 0, 0, 700);
+  grad.addColorStop(0, '#1a1a2e');
+  grad.addColorStop(1, '#16213e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 390, 700);
+}
+
+function drawRoundedRect(x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+  if (fill)   { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
+}
+
+function drawStartScreen() {
+  drawBg();
+
+  ctx.font = 'bold 38px Arial';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText('Vormen', 195, 140);
+
+  ctx.font = 'bold 38px Arial';
+  ctx.fillStyle = '#ffd93d';
+  ctx.fillText('Matchen', 195, 185);
+
+  ctx.font = '20px Arial';
+  ctx.fillStyle = '#ccc';
+  ctx.fillText('Tik op de vorm,', 195, 240);
+  ctx.fillText('dan op het juiste silhouet!', 195, 270);
+
+  // Preview shapes
+  const prevShapes = ['circle','square','triangle','star','heart'];
+  const previewColors = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff'];
+  prevShapes.forEach((s, i) => {
+    drawShape(s, 40 + i * 78, 390, 26, previewColors[i], null);
+  });
+
+  drawRoundedRect(startBtn.x, startBtn.y, startBtn.w, startBtn.h, 18, '#ffd93d', null);
+  ctx.font = 'bold 26px Arial';
+  ctx.fillStyle = '#1a1a2e';
+  ctx.textAlign = 'center';
+  ctx.fillText('▶  SPELEN', startBtn.x + startBtn.w/2, startBtn.y + startBtn.h/2 + 2);
+}
+
+function drawQuestion() {
+  drawBg();
+  drawParticles();
+
+  // Round / score
+  ctx.font = 'bold 22px Arial';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText(`Ronde ${round} / ${TOTAL_ROUNDS}`, 195, 38);
+  ctx.font = '18px Arial';
+  ctx.fillStyle = '#ffd93d';
+  ctx.fillText(`⭐ ${score}`, 195, 64);
+
+  // Instruction
+  const instruction = shapeSelected
+    ? `Zet de ${SHAPE_NAMES[correctType]} op het silhouet!`
+    : `Tik op de ${SHAPE_NAMES[correctType]}!`;
+  ctx.font = 'bold 22px Arial';
+  ctx.fillStyle = '#badc58';
+  ctx.textAlign = 'center';
+  ctx.fillText(instruction, 195, 100);
+
+  // Falling shape
+  if (fallingShape) {
+    const bob = Math.sin(animFrame * 0.06) * 6;
+    const s = fallingShape;
+    const glowColor = s.color;
+
+    // Glow
+    ctx.save();
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = shapeSelected ? 30 : 12;
+    drawShape(s.type, s.x, s.y + bob, s.size * (shapeSelected ? 1.1 : 1), s.color, '#fff');
+    ctx.restore();
+
+    // "Selected" ring
+    if (shapeSelected) {
+      ctx.save();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y + bob, s.size * 1.3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Divider line
+  ctx.strokeStyle = '#ffffff22';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(20, 490); ctx.lineTo(370, 490); ctx.stroke();
+
+  ctx.font = '16px Arial';
+  ctx.fillStyle = '#ffffff66';
+  ctx.textAlign = 'center';
+  ctx.fillText('▼  Silhouetten  ▼', 195, 510);
+
+  // Silhouettes
+  silhouettes.forEach(sil => {
+    const isCorrect = sil.type === correctType;
+    const glow = shapeSelected && isCorrect;
+    ctx.save();
+    if (glow) { ctx.shadowColor = '#ffd93d'; ctx.shadowBlur = 20; }
+    // Draw silhouette (dark fill + light border)
+    drawShape(sil.type, sil.x, sil.y, sil.size, '#ffffff18', glow ? '#ffd93d' : '#ffffff55');
+    ctx.restore();
+
+    // Shape name label
+    ctx.font = '13px Arial';
+    ctx.fillStyle = '#ffffff88';
+    ctx.textAlign = 'center';
+    ctx.fillText(SHAPE_NAMES[sil.type], sil.x, sil.y + sil.size + 16);
+  });
+}
+
+function drawFeedback() {
+  drawBg();
+  drawParticles();
+
+  const pulse = 1 + Math.sin(animFrame * 0.12) * 0.06;
+  ctx.save();
+  ctx.translate(195, 270);
+  ctx.scale(pulse, pulse);
+
+  drawShape(correctType, 0, -60, 70, fallingShape ? fallingShape.color : '#ff6b6b', '#fff');
+
+  ctx.font = 'bold 38px Arial';
+  ctx.fillStyle = feedbackCorrect ? '#badc58' : '#ff6b6b';
+  ctx.textAlign = 'center';
+  ctx.fillText(feedbackCorrect ? '🎉 Goed zo!' : '😊 Bijna!', 0, 50);
+
+  ctx.font = '22px Arial';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`Dit was: ${SHAPE_NAMES[correctType]}`, 0, 90);
+  ctx.restore();
+}
+
+function drawEndScreen() {
+  drawBg();
+  drawParticles();
+
+  ctx.font = '80px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🏆', 195, 210);
+
+  ctx.font = 'bold 34px Arial';
+  ctx.fillStyle = '#ffd93d';
+  ctx.textAlign = 'center';
+  ctx.fillText('Klaar!', 195, 290);
+
+  ctx.font = '26px Arial';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`Score: ${score} / ${TOTAL_ROUNDS}`, 195, 340);
+
+  const msg = score >= 8 ? 'Wauw, super! 🌟' :
+               score >= 5 ? 'Goed gedaan! 👍' : 'Blijven oefenen! 💪';
+  ctx.font = '22px Arial';
+  ctx.fillStyle = '#badc58';
+  ctx.fillText(msg, 195, 390);
+
+  drawRoundedRect(replayBtn.x, replayBtn.y, replayBtn.w, replayBtn.h, 18, '#ffd93d', null);
+  ctx.font = 'bold 24px Arial';
+  ctx.fillStyle = '#1a1a2e';
+  ctx.textAlign = 'center';
+  ctx.fillText('🔄 Opnieuw', replayBtn.x + replayBtn.w/2, replayBtn.y + replayBtn.h/2 + 2);
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    if (p.type === 'circle') {
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+    } else {
+      ctx.fillRect(p.x - p.r/2, p.y - p.r/2, p.r, p.r);
+    }
+    ctx.restore();
+  });
+}
+
+// ─── Update ───────────────────────────────────────────────────────────────────
+function update() {
+  animFrame++;
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= 0.02;
+  });
+  particles = particles.filter(p => p.life > 0);
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  update();
+  ctx.clearRect(0, 0, 390, 700);
+  if      (phase === 'start')    drawStartScreen();
+  else if (phase === 'question') drawQuestion();
+  else if (phase === 'feedback') drawFeedback();
+  else if (phase === 'end')      drawEndScreen();
+  requestAnimationFrame(render);
+}
+
+// ─── Hit testing ─────────────────────────────────────────────────────────────
+function hitShape(px, py, type, cx, cy, size) {
+  if (type === 'circle') {
+    return Math.hypot(px-cx, py-cy) < size * 1.3;
+  } else if (type === 'square') {
+    return px >= cx-size*1.2 && px <= cx+size*1.2 && py >= cy-size*1.2 && py <= cy+size*1.2;
+  } else {
+    // Generous bounding box for others
+    return px >= cx-size*1.4 && px <= cx+size*1.4 && py >= cy-size*1.6 && py <= cy+size*1.6;
+  }
+}
+
+// ─── Input ───────────────────────────────────────────────────────────────────
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  if (e.touches) {
+    return { x: (e.touches[0].clientX - rect.left)*scaleX, y: (e.touches[0].clientY - rect.top)*scaleY };
+  }
+  return { x: (e.clientX - rect.left)*scaleX, y: (e.clientY - rect.top)*scaleY };
+}
+
+function inRect(pos, r) {
+  return pos.x >= r.x && pos.x <= r.x+r.w && pos.y >= r.y && pos.y <= r.y+r.h;
+}
+
+function handleTap(pos) {
+  if (phase === 'start') {
+    if (inRect(pos, startBtn)) { score = 0; round = 1; newRound(); }
+    return;
+  }
+
+  if (phase === 'question') {
+    const bob = Math.sin(animFrame * 0.06) * 6;
+    const fs = fallingShape;
+
+    if (!shapeSelected) {
+      // Must tap falling shape first
+      if (hitShape(pos.x, pos.y, fs.type, fs.x, fs.y + bob, fs.size)) {
+        shapeSelected = true;
+      }
+      return;
+    }
+
+    // Now tap a silhouette
+    for (const sil of silhouettes) {
+      if (hitShape(pos.x, pos.y, sil.type, sil.x, sil.y, sil.size * 1.3)) {
+        feedbackCorrect = (sil.type === correctType);
+        if (feedbackCorrect) {
+          score++;
+          spawnParticles(sil.x, sil.y, '#ffd93d');
+          spawnParticles(195, 300, '#ffd93d');
+        }
+        phase = 'feedback';
+        if (feedbackTimer) clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => {
+          if (round >= TOTAL_ROUNDS) {
+            phase = 'end';
+            spawnParticles(195, 300, '#ffd93d');
+          } else {
+            round++;
+            newRound();
+          }
+        }, 1800);
+        return;
+      }
+    }
+
+    // Tapped somewhere else — deselect
+    shapeSelected = false;
+    return;
+  }
+
+  if (phase === 'end') {
+    if (inRect(pos, replayBtn)) { score = 0; round = 1; newRound(); }
+  }
+}
+
+canvas.onclick = function(e) { handleTap(getPos(e)); };
+canvas.ontouchstart = function(e) { e.preventDefault(); handleTap(getPos(e)); };
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
