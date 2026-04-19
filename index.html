@@ -812,7 +812,7 @@ function drawSelectScreen(){
   LEVELS.forEach((lv,i)=>{
     const y=startY+i*(cardH+gap);
     const hov=hovCard===i;
-    const alpha=hov?.95:.75;
+    const alpha=hov?0.95:0.75;
 
     // card bg
     ctx.save();
@@ -831,7 +831,7 @@ function drawSelectScreen(){
     ctx.save();
     const barG=ctx.createLinearGradient(cardX,y,cardX,y+cardH);
     barG.addColorStop(0,lv.color);barG.addColorStop(1,lv.dark);
-    ctx.fillStyle=barG;ctx.globalAlpha=hov?.9:.6;
+    ctx.fillStyle=barG;ctx.globalAlpha=hov?0.9:0.6;
     rr(ctx,cardX,y,4,cardH,2);ctx.fill();
     ctx.restore();
 
@@ -845,7 +845,7 @@ function drawSelectScreen(){
     ctx.restore();
 
     // icon
-    ctx.save();ctx.globalAlpha=hov?.7:.4;
+    ctx.save();ctx.globalAlpha=hov?0.7:0.4;
     ctx.font='18px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
     ctx.fillStyle=lv.color;
     ctx.fillText(lv.icon,cardX+45,y+cardH/2-6);
@@ -859,19 +859,19 @@ function drawSelectScreen(){
     ctx.restore();
 
     // sub description
-    ctx.save();ctx.globalAlpha=hov?.95:.75;
+    ctx.save();ctx.globalAlpha=hov?0.95:0.75;
     ctx.font='10px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
     ctx.fillStyle=hov?'#aabfd0':'#889aaa';
     ctx.fillText(lv.sub,cardX+70,y+42);
     ctx.restore();
 
     // score multiplier badge
-    ctx.save();ctx.globalAlpha=hov?.8:.5;
+    ctx.save();ctx.globalAlpha=hov?0.8:0.5;
     const mulTxt=`\xd7${lv.mul.toFixed(1)}`;
     ctx.font='bold 10px Arial';ctx.textAlign='right';ctx.textBaseline='middle';
     ctx.fillStyle=lv.color;
     ctx.fillText(mulTxt,cardX+cardW-12,y+22);
-    ctx.globalAlpha=hov?.4:.2;ctx.fillStyle=lv.color;
+    ctx.globalAlpha=hov?0.4:0.2;ctx.fillStyle=lv.color;
     ctx.font='8px Arial';ctx.fillText('SCORE',cardX+cardW-12,y+36);
     ctx.restore();
 
