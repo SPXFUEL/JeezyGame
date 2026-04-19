@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Woordenpuzzel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a0533;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const TOTAL_ROUNDS = 10;
+
+// 20 Dutch words with emoji
+const WORDS = [
+  { word: 'KAT',   emoji: '🐱' },
+  { word: 'HAS',   emoji: '🐰' },
+  { word: 'HND',   emoji: '🐶', real: 'HOND' }, // special: see below
+  { word: 'KOE',   emoji: '🐮' },
+  { word: 'VIS',   emoji: '🐟' },
+  { word: 'BEK',   emoji: '🐦', real: 'VOGEL' },
+  { word: 'BOL',   emoji: '⚽' },
+  { word: 'ZON',   emoji: '☀️' },
+  { word: 'BOM',   emoji: '🌳' },
+  { word: 'EI',    emoji: '🥚' },
+  { word: 'BUS',   emoji: '🚌' },
+  { word: 'DAK',   emoji: '🏠' },
+  { word: 'POP',   emoji: '🪆' },
+  { word: 'BOOT',  emoji: '⛵' },
+  { word: 'MAAN',  emoji: '🌙' },
+  { word: 'PEER',  emoji: '🍐' },
+  { word: 'BEER',  emoji: '🐻' },
+  { word: 'ROOS',  emoji: '🌹' },
+  { word: 'TREIN', emoji: '🚂' },
+  { word: 'HUIS',  emoji: '🏡' },
+];
+
+// Fix the WORDS array — use real Dutch words
+const WORD_LIST = [
+  { word: 'KAT',   emoji: '🐱' },
+  { word: 'BAS',   emoji: '🐰', real: 'HAS' },
+  { word: 'HOND',  emoji: '🐶' },
+  { word: 'KOE',   emoji: '🐮' },
+  { word: 'VIS',   emoji: '🐟' },
+  { word: 'EI',    emoji: '🥚' },
+  { word: 'BUS',   emoji: '🚌' },
+  { word: 'DAK',   emoji: '🏠' },
+  { word: 'POP',   emoji: '🪆' },
+  { word: 'BOOT',  emoji: '⛵' },
+  { word: 'MAAN',  emoji: '🌙' },
+  { word: 'PEER',  emoji: '🍐' },
+  { word: 'BEER',  emoji: '🐻' },
+  { word: 'ROOS',  emoji: '🌹' },
+  { word: 'TREIN', emoji: '🚂' },
+  { word: 'HUIS',  emoji: '🏡' },
+  { word: 'BOOM',  emoji: '🌳' },
+  { word: 'ZON',   emoji: '☀️' },
+  { word: 'BOL',   emoji: '⚽' },
+  { word: 'VOS',   emoji: '🦊' },
+];
+
+let round = 0;
+let score = 0;
+let phase = 'playing'; // 'playing' | 'feedback' | 'done'
+
+let currentWord = '';
+let currentEmoji = '';
+let letterTiles = [];    // scrambled tiles available to tap
+let answerSlots = [];    // slots where tapped letters land
+let answerFilled = [];   // letters filled so far (by tile index from letterTiles)
+let feedbackState = '';  // '' | 'correct' | 'wrong'
+let feedbackTimer = 0;
+let flashAlpha = 0;
+let bgParticles = [];
+let confettiPieces = [];
+
+// Progress bar animation
+let progressAnim = 0;
+
+// Background floating shapes
+for (let i = 0; i < 18; i++) {
+  bgParticles.push({
+    x: Math.random() * 390,
+    y: Math.random() * 700,
+    r: 2 + Math.random() * 3,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: -0.2 - Math.random() * 0.3,
+    hue: Math.random() * 60 + 270,
+    alpha: 0.2 + Math.random() * 0.3,
+  });
+}
+
+function ConfettiPiece(x, y) {
+  this.x = x; this.y = y;
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 3 + Math.random() * 6;
+  this.vx = Math.cos(angle) * speed;
+  this.vy = Math.sin(angle) * speed - 4;
+  this.gravity = 0.2;
+  this.life = 1;
+  this.hue = Math.random() * 360;
+  this.w = 8 + Math.random() * 8;
+  this.h = 5 + Math.random() * 5;
+  this.rot = Math.random() * Math.PI * 2;
+  this.rotSpeed = (Math.random() - 0.5) * 0.2;
+}
+ConfettiPiece.prototype.update = function() {
+  this.x += this.vx;
+  this.y += this.vy;
+  this.vy += this.gravity;
+  this.rot += this.rotSpeed;
+  this.life -= 0.018;
+};
+ConfettiPiece.prototype.draw = function() {
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, this.life);
+  ctx.translate(this.x, this.y);
+  ctx.rotate(this.rot);
+  ctx.fillStyle = 'hsl(' + this.hue + ', 100%, 65%)';
+  ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h);
+  ctx.restore();
+};
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// --- Layout constants ---
+const TILE_SIZE = 62;
+const TILE_GAP = 10;
+const SLOT_SIZE = 62;
+const SLOT_GAP = 10;
+
+function buildLayout(word) {
+  const n = word.length;
+
+  // Answer slots row (center)
+  const slotsTotalW = n * SLOT_SIZE + (n - 1) * SLOT_GAP;
+  const slotsStartX = (390 - slotsTotalW) / 2;
+  const slotsY = 440;
+  answerSlots = [];
+  for (let i = 0; i < n; i++) {
+    answerSlots.push({
+      x: slotsStartX + i * (SLOT_SIZE + SLOT_GAP),
+      y: slotsY,
+      letter: '',
+      tileIdx: -1,
+    });
+  }
+
+  // Letter tiles row (scrambled)
+  const scrambled = shuffle(word.split(''));
+  // If word has <= 5 letters, add 1-2 distractors
+  const allLetters = 'ABCDEFGHIJKLMNOPRSTUVW';
+  let extras = [];
+  const extraCount = n <= 3 ? 2 : n <= 4 ? 1 : 0;
+  while (extras.length < extraCount) {
+    const l = allLetters[Math.floor(Math.random() * allLetters.length)];
+    if (!scrambled.includes(l) || Math.random() < 0.5) {
+      extras.push(l);
+      if (extras.length >= extraCount) break;
+    }
+    if (extras.length >= extraCount) break;
+  }
+  const allTiles = shuffle(scrambled.concat(extras));
+  const m = allTiles.length;
+  const tilesTotalW = m * TILE_SIZE + (m - 1) * TILE_GAP;
+  const tilesStartX = Math.max(10, (390 - tilesTotalW) / 2);
+  const tilesY = 548;
+
+  letterTiles = [];
+  for (let i = 0; i < m; i++) {
+    letterTiles.push({
+      x: tilesStartX + i * (TILE_SIZE + TILE_GAP),
+      y: tilesY,
+      letter: allTiles[i],
+      used: false,
+      scale: 1,
+      targetScale: 1,
+      bounce: 0,
+    });
+  }
+  answerFilled = [];
+}
+
+function startRound() {
+  phase = 'playing';
+  feedbackState = '';
+  feedbackTimer = 0;
+  flashAlpha = 0;
+  confettiPieces = [];
+  answerFilled = [];
+
+  // Pick word from list (cycle through)
+  const idx = round % WORD_LIST.length;
+  currentWord = WORD_LIST[idx].word;
+  currentEmoji = WORD_LIST[idx].emoji;
+
+  buildLayout(currentWord);
+}
+
+function tapTile(tileIdx) {
+  if (phase !== 'playing') return;
+  const tile = letterTiles[tileIdx];
+  if (tile.used) return;
+  if (answerFilled.length >= currentWord.length) return;
+
+  // Place in next empty slot
+  const slotIdx = answerFilled.length;
+  tile.used = true;
+  answerSlots[slotIdx].letter = tile.letter;
+  answerSlots[slotIdx].tileIdx = tileIdx;
+  answerFilled.push(tileIdx);
+
+  // Bounce tile animation
+  tile.targetScale = 0.85;
+  setTimeout(function() { tile.targetScale = 1; }, 100);
+
+  // Check if all slots filled
+  if (answerFilled.length === currentWord.length) {
+    checkWord();
+  }
+}
+
+function tapSlot(slotIdx) {
+  if (phase !== 'playing') return;
+  // Remove last filled letter (only allow removing in reverse order for simplicity)
+  if (answerFilled.length === 0) return;
+  // Find the last slot that is at slotIdx or remove last
+  // Allow tapping any filled slot to remove it and all after it
+  let removeFrom = -1;
+  for (let i = 0; i < answerFilled.length; i++) {
+    if (i === slotIdx) { removeFrom = i; break; }
+  }
+  if (removeFrom === -1) removeFrom = answerFilled.length - 1;
+
+  // Unuse tiles from removeFrom onwards
+  for (let i = removeFrom; i < answerFilled.length; i++) {
+    const tIdx = answerFilled[i];
+    letterTiles[tIdx].used = false;
+    answerSlots[i].letter = '';
+    answerSlots[i].tileIdx = -1;
+  }
+  answerFilled = answerFilled.slice(0, removeFrom);
+}
+
+function checkWord() {
+  const formed = answerSlots.map(s => s.letter).join('');
+  if (formed === currentWord) {
+    // Correct!
+    score++;
+    feedbackState = 'correct';
+    feedbackTimer = 100;
+    flashAlpha = 1;
+    // Spawn confetti
+    for (let i = 0; i < 40; i++) {
+      confettiPieces.push(new ConfettiPiece(195, 400));
+    }
+  } else {
+    // Wrong
+    feedbackState = 'wrong';
+    feedbackTimer = 90;
+    flashAlpha = 1;
+    // Shake: reset after showing
+    setTimeout(function() {
+      // Reset tiles
+      for (let s of answerSlots) { s.letter = ''; s.tileIdx = -1; }
+      for (let t of letterTiles) { t.used = false; }
+      answerFilled = [];
+      feedbackState = '';
+    }, 900);
+    feedbackTimer = 0; // don't auto-advance
+    return;
+  }
+
+  phase = 'feedback';
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, 700);
+  grad.addColorStop(0, '#1a0533');
+  grad.addColorStop(1, '#0a1628');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 390, 700);
+
+  for (let p of bgParticles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.y < -10) { p.y = 710; p.x = Math.random() * 390; }
+    ctx.save();
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = 'hsl(' + p.hue + ', 80%, 70%)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  // Round
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  roundRect(ctx, 14, 14, 160, 48, 24);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Ronde ' + (round + 1) + ' / ' + TOTAL_ROUNDS, 28, 38);
+  ctx.restore();
+
+  // Score
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  roundRect(ctx, 216, 14, 160, 48, 24);
+  ctx.fill();
+  ctx.fillStyle = '#f7c948';
+  ctx.font = 'bold 18px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⭐ ' + score + ' / ' + TOTAL_ROUNDS, 296, 38);
+  ctx.restore();
+
+  // Progress bar
+  const barW = 350, barH = 10;
+  const barX = (390 - barW) / 2;
+  const barY = 74;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  roundRect(ctx, barX, barY, barW, barH, 5);
+  ctx.fill();
+  progressAnim += (((round) / TOTAL_ROUNDS) - progressAnim) * 0.1;
+  const fillW = Math.max(4, progressAnim * barW);
+  ctx.fillStyle = '#a855f7';
+  roundRect(ctx, barX, barY, fillW, barH, 5);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawEmoji() {
+  // Big emoji in the center
+  ctx.save();
+  ctx.font = '100px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(168,85,247,0.6)';
+  ctx.shadowBlur = 30;
+  ctx.fillText(currentEmoji, 195, 200);
+  ctx.restore();
+}
+
+function drawAnswerSlots() {
+  const flashGreen = feedbackState === 'correct' ? flashAlpha : 0;
+  const flashRed = feedbackState === 'wrong' ? flashAlpha : 0;
+
+  for (let i = 0; i < answerSlots.length; i++) {
+    const s = answerSlots[i];
+    ctx.save();
+
+    // Slot background
+    const filled = s.letter !== '';
+    let slotColor;
+    if (flashGreen > 0) slotColor = 'rgba(94,240,101,' + (0.3 + flashGreen * 0.5) + ')';
+    else if (flashRed > 0 && filled) slotColor = 'rgba(255,107,107,' + (0.3 + flashRed * 0.5) + ')';
+    else if (filled) slotColor = 'rgba(168,85,247,0.4)';
+    else slotColor = 'rgba(255,255,255,0.08)';
+
+    ctx.fillStyle = slotColor;
+    ctx.shadowColor = filled ? '#a855f7' : 'transparent';
+    ctx.shadowBlur = filled ? 12 : 0;
+    roundRect(ctx, s.x, s.y, SLOT_SIZE, SLOT_SIZE, 14);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = filled
+      ? (flashGreen > 0 ? '#5ef065' : flashRed > 0 ? '#ff6b6b' : '#a855f7')
+      : 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 2.5;
+    roundRect(ctx, s.x, s.y, SLOT_SIZE, SLOT_SIZE, 14);
+    ctx.stroke();
+
+    // Letter
+    if (s.letter) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 34px Arial Rounded MT Bold, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 0;
+      ctx.fillText(s.letter, s.x + SLOT_SIZE / 2, s.y + SLOT_SIZE / 2 + 2);
+    } else {
+      // Underscore hint
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(s.x + 12, s.y + SLOT_SIZE - 12);
+      ctx.lineTo(s.x + SLOT_SIZE - 12, s.y + SLOT_SIZE - 12);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // "Spel het woord:" label
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = 'bold 20px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Spel het woord:', 195, 416);
+  ctx.restore();
+}
+
+function drawLetterTiles() {
+  for (let i = 0; i < letterTiles.length; i++) {
+    const t = letterTiles[i];
+    t.scale += (t.targetScale - t.scale) * 0.25;
+
+    ctx.save();
+    const cx = t.x + TILE_SIZE / 2;
+    const cy = t.y + TILE_SIZE / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(t.scale, t.scale);
+    ctx.translate(-TILE_SIZE / 2, -TILE_SIZE / 2);
+
+    if (t.used) {
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      roundRect(ctx, 0, 0, TILE_SIZE, TILE_SIZE, 14);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 2;
+      roundRect(ctx, 0, 0, TILE_SIZE, TILE_SIZE, 14);
+      ctx.stroke();
+    } else {
+      // Bright tile
+      const grad = ctx.createLinearGradient(0, 0, 0, TILE_SIZE);
+      grad.addColorStop(0, '#f7c948');
+      grad.addColorStop(1, '#e8a820');
+      ctx.fillStyle = grad;
+      ctx.shadowColor = 'rgba(247,201,72,0.5)';
+      ctx.shadowBlur = 10;
+      roundRect(ctx, 0, 0, TILE_SIZE, TILE_SIZE, 14);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      roundRect(ctx, 0, 0, TILE_SIZE, TILE_SIZE, 14);
+      ctx.stroke();
+      ctx.fillStyle = '#1a0533';
+      ctx.font = 'bold 34px Arial Rounded MT Bold, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t.letter, TILE_SIZE / 2, TILE_SIZE / 2 + 2);
+    }
+    ctx.restore();
+  }
+
+  // "Tik de letters:" label
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '18px Arial Rounded MT Bold, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Tik de letters in de goede volgorde', 195, 528);
+  ctx.restore();
+}
+
+function drawFeedbackOverlay() {
+  if (feedbackState === 'correct' && feedbackTimer > 0) {
+    // Green glow overlay
+    ctx.save();
+    ctx.globalAlpha = flashAlpha * 0.15;
+    ctx.fillStyle = '#5ef065';
+    ctx.fillRect(0, 0, 390, 700);
+    ctx.restore();
+
+    // Big checkmark
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, flashAlpha);
+    ctx.font = '70px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#5ef065';
+    ctx.shadowBlur = 20;
+    ctx.fillText('✅', 195, 330);
+    ctx.font = 'bold 32px Arial Rounded MT Bold, Arial';
+    ctx.fillStyle = '#5ef065';
+    ctx.shadowBlur = 0;
+    ctx.fillText('Goed gedaan!', 195, 390);
+    ctx.restore();
+  }
+
+  if (feedbackState === 'wrong') {
+    // Red glow
+    ctx.save();
+    ctx.globalAlpha = flashAlpha * 0.18;
+    ctx.fillStyle = '#ff6b6b';
+    ctx.fillRect(0, 0, 390, 700);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, flashAlpha);
+    ctx.font = '60px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('❌', 195, 330);
+    ctx.font = 'bold 28px Arial Rounded MT Bold, Arial';
+    ctx.fillStyle = '#ff9f9f';
+    ctx.fillText('Probeer opnieuw!', 195, 395);
+    ctx.restore();
+  }
+}
+
+function drawDone() {
+  drawBackground();
+
+  for (let i = confettiPieces.length - 1; i >= 0; i--) {
+    confettiPieces[i].update();
+    confettiPieces[i].draw();
+    if (confettiPieces[i].life <= 0) confettiPieces.splice(i, 1);
+  }
+
+  ctx.save();
+  ctx.font = '80px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🎊', 195, 185);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 38px Arial Rounded MT Bold, Arial';
+  ctx.fillText('Geweldig!', 195, 295);
+
+  ctx.font = 'bold 26px Arial Rounded MT Bold, Arial';
+  ctx.fillStyle = '#f7c948';
+  ctx.fillText(score + ' van de ' + TOTAL_ROUNDS + ' goed!', 195, 355);
+
+  ctx.font = '56px serif';
+  const pct = score / TOTAL_ROUNDS;
+  ctx.fillText(pct >= 0.8 ? '🥇' : pct >= 0.5 ? '🥈' : '🥉', 195, 455);
+
+  // Replay
+  ctx.shadowColor = 'rgba(168,85,247,0.5)';
+  ctx.shadowBlur = 18;
+  const grad = ctx.createLinearGradient(110, 535, 280, 615);
+  grad.addColorStop(0, '#a855f7');
+  grad.addColorStop(1, '#7c3aed');
+  ctx.fillStyle = grad;
+  roundRect(ctx, 110, 535, 170, 78, 22);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px Arial Rounded MT Bold, Arial';
+  ctx.fillText('Opnieuw', 195, 576);
+  ctx.restore();
+}
+
+let replayBtn = { x: 110, y: 535, w: 170, h: 78 };
+
+function loop() {
+  requestAnimationFrame(loop);
+
+  if (phase === 'done') {
+    drawDone();
+    // Keep spawning confetti idle
+    if (Math.random() < 0.1) confettiPieces.push(new ConfettiPiece(Math.random()*390, 300));
+    return;
+  }
+
+  drawBackground();
+
+  // Confetti
+  for (let i = confettiPieces.length - 1; i >= 0; i--) {
+    confettiPieces[i].update();
+    confettiPieces[i].draw();
+    if (confettiPieces[i].life <= 0) confettiPieces.splice(i, 1);
+  }
+
+  drawHUD();
+  drawEmoji();
+  drawAnswerSlots();
+  drawLetterTiles();
+
+  if (feedbackState !== '') {
+    drawFeedbackOverlay();
+    if (feedbackState === 'correct') {
+      flashAlpha *= 0.96;
+      if (feedbackTimer > 0) {
+        feedbackTimer--;
+        if (feedbackTimer <= 0) {
+          round++;
+          if (round >= TOTAL_ROUNDS) {
+            phase = 'done';
+          } else {
+            startRound();
+          }
+        }
+      }
+    } else if (feedbackState === 'wrong') {
+      flashAlpha *= 0.94;
+      if (flashAlpha < 0.01) {
+        feedbackState = '';
+        flashAlpha = 0;
+      }
+    }
+  }
+}
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  if (e.touches) {
+    return {
+      x: (e.touches[0].clientX - rect.left) * scaleX,
+      y: (e.touches[0].clientY - rect.top) * scaleY,
+    };
+  }
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY,
+  };
+}
+
+canvas.ontouchstart = function(e) {
+  e.preventDefault();
+  const pos = getPos(e);
+  handleTap(pos.x, pos.y);
+};
+canvas.onclick = function(e) {
+  const pos = getPos(e);
+  handleTap(pos.x, pos.y);
+};
+
+function handleTap(x, y) {
+  if (phase === 'done') {
+    if (x >= replayBtn.x && x <= replayBtn.x + replayBtn.w &&
+        y >= replayBtn.y && y <= replayBtn.y + replayBtn.h) {
+      round = 0; score = 0; startRound();
+    }
+    return;
+  }
+  if (feedbackState !== '') return;
+
+  // Check answer slots (for removal)
+  for (let i = 0; i < answerSlots.length; i++) {
+    const s = answerSlots[i];
+    if (x >= s.x && x <= s.x + SLOT_SIZE && y >= s.y && y <= s.y + SLOT_SIZE) {
+      if (s.letter !== '') {
+        tapSlot(i);
+        return;
+      }
+    }
+  }
+
+  // Check letter tiles
+  for (let i = 0; i < letterTiles.length; i++) {
+    const t = letterTiles[i];
+    if (!t.used && x >= t.x && x <= t.x + TILE_SIZE && y >= t.y && y <= t.y + TILE_SIZE) {
+      tapTile(i);
+      return;
+    }
+  }
+}
+
+startRound();
+loop();
+</script>
+</body>
+</html>
