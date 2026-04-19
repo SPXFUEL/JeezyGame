@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Woordenschat Quiz</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1e0a3c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// 30+ woorden, oplopend in moeilijkheid
+const WORDS = [
+  // Makkelijk
+  { word: 'ARCHIPEL',   emoji: '🏝️',  def: 'eilandengroep',   wrong: ['bergketen','rivier'] },
+  { word: 'HORIZON',    emoji: '🌅',  def: 'de verre lijn waar lucht en aarde lijken te raken', wrong: ['een berg','een wolk'] },
+  { word: 'OMNIVOOR',   emoji: '🦊',  def: 'eet alles (planten én dieren)', wrong: ['eet alleen vlees','eet alleen planten'] },
+  { word: 'HERBIVOOR',  emoji: '🐄',  def: 'eet alleen planten', wrong: ['eet alleen vlees','eet alles'] },
+  { word: 'CARNIVOOR',  emoji: '🦁',  def: 'eet alleen vlees', wrong: ['eet planten','eet insecten'] },
+  { word: 'AQUARIUM',   emoji: '🐠',  def: 'glazen bak met water en vissen', wrong: ['een soort dierentuin','een vijver'] },
+  { word: 'TELESCOOP',  emoji: '🔭',  def: 'kijker om ver weg te zien (sterren!)', wrong: ['kijker voor bacteriën','een soort camera'] },
+  { word: 'MICROSCOOP', emoji: '🔬',  def: 'kijker om hele kleine dingen te zien', wrong: ['een soort bril','kijker voor sterren'] },
+  { word: 'OASE',       emoji: '🌴',  def: 'groene plek met water in de woestijn', wrong: ['een vulkaan','een woestijnstorm'] },
+  { word: 'VULKAAN',    emoji: '🌋',  def: 'berg die vuur en lava uitspuwt', wrong: ['een geiser','een waterval'] },
+  // Gemiddeld
+  { word: 'METAMORFOSE', emoji: '🦋', def: 'grote verandering van vorm (rups → vlinder)', wrong: ['snel rennen','een soort dans'] },
+  { word: 'FOSSIEL',    emoji: '🦕',  def: 'overblijfsel van een oud dier in steen', wrong: ['een levend dier','een soort mineraal'] },
+  { word: 'GRAVITY',    emoji: '🍎',  def: 'de kracht die alles naar beneden trekt', wrong: ['de kracht van wind','de kracht van water'] },
+  { word: 'EQUATOR',    emoji: '🌍',  def: 'denkbeeldige lijn om het midden van de aarde', wrong: ['de noordpool','de evenaar van de maan'] },
+  { word: 'MIGRATIE',   emoji: '🦅',  def: 'trekken naar een ander gebied (bijv. vogels)', wrong: ['slapen in de winter','een soort vogeldans'] },
+  { word: 'SYMMETRIE',  emoji: '🦋',  def: 'beide helften zijn spiegelbeelden van elkaar', wrong: ['iets heel groot','veel kleuren tegelijk'] },
+  { word: 'ECOLOGIE',   emoji: '🌿',  def: 'studie van levende wezens en hun omgeving', wrong: ['studie van rotsen','studie van planeten'] },
+  { word: 'EROSIE',     emoji: '🏔️',  def: 'langzame slijtage van grond/steen door water of wind', wrong: ['berg worden groter','grond bevriezen'] },
+  { word: 'ATMOSFEER',  emoji: '🌫️',  def: 'de luchtlaag rondom de aarde', wrong: ['de bodem van de zee','de kern van de aarde'] },
+  { word: 'FOTOSYNTHESE',emoji:'🌱', def: 'hoe planten zonlicht omzetten in voedsel', wrong: ['hoe dieren ademen','hoe water verdampt'] },
+  // Moeilijk
+  { word: 'BIODIVERSITEIT',emoji:'🌈',def:'de verscheidenheid aan levende soorten op aarde', wrong: ['de kleur van de zee','soort regenwoud'] },
+  { word: 'GRAVITATIE',  emoji: '🪐', def: 'aantrekkingskracht tussen objecten (wet van Newton)', wrong: ['energie van de zon','kracht van magneten'] },
+  { word: 'EVAPORATION', emoji: '💧', def: 'verdamping: vloeistof wordt gas (water → waterdamp)', wrong: ['bevriezen van water','regen'] },
+  { word: 'CHRONOLOGIE', emoji: '📅', def: 'het ordenen van gebeurtenissen op tijd', wrong: ['een soort kaart','het meten van gewicht'] },
+  { word: 'PARADOX',    emoji: '🤔',  def: 'iets dat tegenstrijdig lijkt maar toch klopt', wrong: ['een simpele vraag','een leuk raadsel'] },
+  { word: 'PENINSULA',  emoji: '🗺️',  def: 'schiereiland: stuk land dat bijna omringd is door water', wrong: ['een soort eiland','een diepe vallei'] },
+  { word: 'TECTONICA',  emoji: '🌐',  def: 'de beweging van de grote platen van de aardkorst', wrong: ['het weer voorspellen','de studie van rivieren'] },
+  { word: 'GRAVITON',   emoji: '⚛️',  def: 'hypothetisch deeltje dat zwaartekracht overbrengt', wrong: ['soort atoom','deeltje in de zon'] },
+  { word: 'OSMOSE',     emoji: '🧪',  def: 'water dat door een membraan stroomt van laag naar hoog', wrong: ['water koken','water bevriezen'] },
+  { word: 'ISOTHERM',   emoji: '🌡️',  def: 'lijn op een kaart die punten met gelijke temperatuur verbindt', wrong: ['soort thermometer','lijn van een rivier'] },
+  { word: 'MONOLIET',   emoji: '🪨',  def: 'één grote massieve steen (bijv. Stonehenge)', wrong: ['verzameling kleine steentjes','een soort muur'] },
+  { word: 'AQUATISCH',  emoji: '🐟',  def: 'van of levend in water', wrong: ['van of levend in lucht','van of levend in de grond'] },
+];
+
+const PALETTE = {
+  bg1: '#1e0a3c', bg2: '#2d1b5e',
+  primary: '#9b59b6',
+  accent: '#FFD93D',
+  green: '#6BCB77',
+  red: '#FF6B6B',
+  blue: '#4D96FF',
+  orange: '#FF922B',
+  text: '#fff',
+  dim: 'rgba(255,255,255,0.55)'
+};
+
+let state = 'start';
+let round = 0;
+let score = 0;
+const totalRounds = 10;
+let currentQ = null;
+let feedback = null;
+let particles = [];
+let floatingTexts = [];
+let buttons = [];
+let startBtn = null;
+let restartBtn = null;
+let usedIndices = [];
+let pulse = 0; // for bravo animation
+
+// ---- Helpers ----
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ---- Particles ----
+const BRAVO_EMOJIS = ['⭐','🎉','✨','🌟','🎊','💫','🏆'];
+function spawnParticles(x, y, good) {
+  const cols = good
+    ? [PALETTE.accent, PALETTE.green, PALETTE.blue, PALETTE.orange, '#CC5DE8']
+    : [PALETTE.red, '#888', '#444'];
+  for (let i = 0; i < 30; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2.5 + Math.random() * 7;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      r: 4 + Math.random() * 8,
+      color: cols[randInt(0, cols.length - 1)],
+      life: 1.0,
+      decay: 0.022 + Math.random() * 0.025,
+      shape: randInt(0, 2) // 0 circle 1 rect 2 star
+    });
+  }
+  if (good) {
+    // floating bravo text
+    floatingTexts.push({
+      text: 'BRAVO! 🎉',
+      x: 195, y: 250,
+      life: 1.0, decay: 0.018,
+      vy: -1.2,
+      size: 40
+    });
+  }
+}
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= p.decay;
+  });
+  floatingTexts = floatingTexts.filter(t => t.life > 0);
+  floatingTexts.forEach(t => { t.y += t.vy; t.life -= t.decay; });
+  pulse = (pulse + 0.07) % (Math.PI * 2);
+}
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    if (p.shape === 0) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    } else if (p.shape === 1) {
+      ctx.fillRect(p.x - p.r/2, p.y - p.r/2, p.r, p.r);
+    } else {
+      drawMiniStar(p.x, p.y, p.r, p.color, p.life);
+    }
+  });
+  ctx.globalAlpha = 1;
+
+  floatingTexts.forEach(t => {
+    ctx.globalAlpha = t.life;
+    ctx.fillStyle = PALETTE.accent;
+    ctx.font = 'bold ' + t.size + 'px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(255,217,61,0.7)';
+    ctx.shadowBlur = 20;
+    ctx.fillText(t.text, t.x, t.y);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  });
+}
+function drawMiniStar(cx, cy, r, color, alpha) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI / 5) * i - Math.PI / 2;
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    i === 0 ? ctx.moveTo(cx + Math.cos(a)*rad, cy + Math.sin(a)*rad)
+            : ctx.lineTo(cx + Math.cos(a)*rad, cy + Math.sin(a)*rad);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ---- Draw Helpers ----
+function drawRR(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 3; ctx.stroke(); }
+}
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 390, 700);
+  g.addColorStop(0, PALETTE.bg1);
+  g.addColorStop(1, PALETTE.bg2);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 390, 700);
+
+  // decorative sparkles
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#fff';
+  const sparkles = [[30,80],[360,150],[20,400],[370,500],[180,620],[50,600],[340,250]];
+  sparkles.forEach(function(s) {
+    ctx.beginPath();
+    ctx.arc(s[0], s[1], 2.5, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawStar(cx, cy, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI/5)*i - Math.PI/2;
+    const rad = i%2===0 ? r : r*0.45;
+    i===0 ? ctx.moveTo(cx+Math.cos(a)*rad, cy+Math.sin(a)*rad)
+           : ctx.lineTo(cx+Math.cos(a)*rad, cy+Math.sin(a)*rad);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ---- Screens ----
+function drawStartScreen() {
+  drawBackground();
+
+  ctx.fillStyle = PALETTE.accent;
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(255,217,61,0.5)';
+  ctx.shadowBlur = 20;
+  ctx.fillText('📚 Woordenschat', 195, 105);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#d4b8ff';
+  ctx.font = '20px Arial';
+  ctx.fillText('Wat betekent dit woord?', 195, 150);
+
+  // example words
+  const examples = [
+    {word:'ARCHIPEL', emoji:'🏝️'},
+    {word:'METAMORFOSE', emoji:'🦋'},
+    {word:'OSMOSE', emoji:'🧪'},
+    {word:'EQUATOR', emoji:'🌍'},
+  ];
+  examples.forEach(function(e, i) {
+    const x = 50 + (i % 2) * 180;
+    const y = 240 + Math.floor(i / 2) * 110;
+    drawRR(x-10, y-50, 160, 90, 14, 'rgba(155,89,182,0.25)');
+    ctx.font = '36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(e.emoji, x + 70, y - 15);
+    ctx.font = 'bold 14px Arial';
+    ctx.fillStyle = PALETTE.accent;
+    ctx.fillText(e.word, x + 70, y + 25);
+  });
+
+  ctx.fillStyle = PALETTE.dim;
+  ctx.font = '17px Arial';
+  ctx.fillText('30 woorden • 10 vragen • Oplopend moeilijk', 195, 490);
+
+  drawRR(95, 540, 200, 68, 18, PALETTE.green);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 26px Arial';
+  ctx.fillText('SPELEN!', 195, 574);
+
+  startBtn = { x: 95, y: 540, w: 200, h: 68 };
+}
+
+function drawPlayScreen() {
+  drawBackground();
+  const q = currentQ;
+
+  // Header
+  ctx.fillStyle = PALETTE.accent;
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Vraag ' + round + ' / ' + totalRounds, 195, 38);
+
+  ctx.fillStyle = PALETTE.green;
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText('Score: ' + score, 195, 65);
+
+  // Progress
+  drawRR(25, 78, 340, 10, 5, 'rgba(255,255,255,0.1)');
+  drawRR(25, 78, 340 * (round / totalRounds), 10, 5, PALETTE.primary);
+
+  // Word box with pulse glow if no feedback yet
+  const glowAlpha = feedback === null ? 0.4 + Math.sin(pulse) * 0.25 : 0.15;
+  ctx.shadowColor = PALETTE.primary;
+  ctx.shadowBlur = 20 * glowAlpha;
+  drawRR(20, 105, 350, 100, 16, 'rgba(155,89,182,0.22)', PALETTE.primary, 2);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = PALETTE.dim;
+  ctx.font = '17px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Wat betekent dit woord?', 195, 135);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 32px Arial';
+  ctx.fillText(q.word, 195, 170);
+
+  // Emoji
+  ctx.font = '80px Arial';
+  ctx.fillText(q.emoji, 195, 295);
+
+  // Answer buttons
+  buttons = [];
+  const btnY = [400, 490, 580];
+  const btnFills = [PALETTE.blue, PALETTE.orange, '#CC5DE8'];
+
+  q.answers.forEach(function(ans, i) {
+    let fill = btnFills[i % 3];
+    let textCol = '#fff';
+    let border = null;
+
+    if (feedback !== null) {
+      if (i === q.correctIdx) {
+        fill = PALETTE.green;
+        border = '#fff';
+      } else if (i === feedback.chosen && !feedback.correct) {
+        fill = PALETTE.red;
+        border = '#fff';
+      } else {
+        fill = 'rgba(255,255,255,0.06)';
+        textCol = 'rgba(255,255,255,0.3)';
+      }
+    }
+
+    // Multi-line button text
+    const maxW = 280;
+    ctx.font = 'bold 18px Arial';
+    const words = ans.split(' ');
+    const lines = [];
+    let line = '';
+    words.forEach(function(w) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line); line = w;
+      } else { line = test; }
+    });
+    if (line) lines.push(line);
+
+    const btnH = lines.length > 1 ? 76 : 66;
+    const btnTop = btnY[i] - btnH / 2;
+
+    drawRR(25, btnTop, 340, btnH, 15, fill, border, 3);
+
+    ctx.fillStyle = textCol;
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lineH = 24;
+    const startTy = btnTop + btnH/2 - (lines.length - 1) * lineH / 2;
+    lines.forEach(function(l, li) {
+      ctx.fillText(l, 195, startTy + li * lineH);
+    });
+
+    buttons.push({ x: 25, y: btnTop, w: 340, h: btnH, idx: i });
+  });
+
+  // Correct answer hint
+  if (feedback !== null && !feedback.correct) {
+    ctx.fillStyle = 'rgba(107,203,119,0.8)';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✓ ' + q.answers[q.correctIdx], 195, 660);
+  }
+
+  drawParticles();
+}
+
+function drawEndScreen() {
+  drawBackground();
+
+  ctx.fillStyle = PALETTE.accent;
+  ctx.font = 'bold 46px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(255,217,61,0.5)';
+  ctx.shadowBlur = 22;
+  ctx.fillText('Klaar! 🎉', 195, 130);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#d4b8ff';
+  ctx.font = '24px Arial';
+  ctx.fillText('Jouw score:', 195, 205);
+
+  ctx.fillStyle = PALETTE.green;
+  ctx.font = 'bold 82px Arial';
+  ctx.fillText(score + '/' + totalRounds, 195, 320);
+
+  const msg = score <= 3 ? 'Blijven lezen! 📖'
+            : score <= 6 ? 'Goed bezig! 🌟'
+            : score <= 8 ? 'Woordenkenner! 🏅'
+            : 'Woordkampioen! 🏆';
+  ctx.fillStyle = PALETTE.accent;
+  ctx.font = 'bold 26px Arial';
+  ctx.fillText(msg, 195, 395);
+
+  const starCount = Math.ceil((score / totalRounds) * 3);
+  for (let i = 0; i < 3; i++) drawStar(130 + i * 65, 460, 22, i < starCount ? '#FFD700' : '#2a1a4a');
+
+  drawRR(95, 530, 200, 65, 18, PALETTE.blue);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px Arial';
+  ctx.fillText('Opnieuw!', 195, 563);
+
+  restartBtn = { x: 95, y: 530, w: 200, h: 65 };
+  drawParticles();
+}
+
+// ---- Logic ----
+function buildPool() {
+  // Spread difficulty: first 3 easy (0-9), mid (10-19), hard (20-29)
+  const easy = shuffle(WORDS.slice(0, 10));
+  const med = shuffle(WORDS.slice(10, 20));
+  const hard = shuffle(WORDS.slice(20));
+  // 3 easy, 4 medium, 3 hard
+  return [...easy.slice(0, 3), ...med.slice(0, 4), ...hard.slice(0, 3)];
+}
+
+let questionPool = [];
+
+function startGame() {
+  round = 0; score = 0; particles = []; floatingTexts = [];
+  questionPool = buildPool();
+  nextRound();
+}
+function nextRound() {
+  if (round >= totalRounds) {
+    state = 'end';
+    spawnParticles(195, 350, score > totalRounds / 2);
+    return;
+  }
+  const wordObj = questionPool[round];
+  round++;
+  feedback = null;
+
+  const opts = shuffle([wordObj.def, wordObj.wrong[0], wordObj.wrong[1]]);
+  const correctIdx = opts.indexOf(wordObj.def);
+  currentQ = { word: wordObj.word, emoji: wordObj.emoji, answers: opts, correctIdx, def: wordObj.def };
+  state = 'playing';
+}
+function answerChosen(idx) {
+  if (feedback !== null) return;
+  const correct = idx === currentQ.correctIdx;
+  feedback = { correct, chosen: idx };
+  if (correct) {
+    score++;
+    spawnParticles(195, 295, true);
+  } else {
+    spawnParticles(195, 295, false);
+  }
+  setTimeout(function() { nextRound(); }, 1400);
+}
+
+// ---- Loop ----
+function loop() {
+  requestAnimationFrame(loop);
+  updateParticles();
+  if (state === 'start') drawStartScreen();
+  else if (state === 'playing') drawPlayScreen();
+  else if (state === 'end') drawEndScreen();
+}
+
+// ---- Input ----
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+  if (e.touches && e.touches.length > 0) {
+    return { x: (e.touches[0].clientX - rect.left)*sx, y: (e.touches[0].clientY - rect.top)*sy };
+  }
+  return { x: (e.clientX - rect.left)*sx, y: (e.clientY - rect.top)*sy };
+}
+function handleTap(e) {
+  e.preventDefault();
+  const {x,y} = getPos(e);
+  if (state === 'start' && startBtn) {
+    if (x>=startBtn.x && x<=startBtn.x+startBtn.w && y>=startBtn.y && y<=startBtn.y+startBtn.h) startGame();
+  } else if (state === 'playing') {
+    buttons.forEach(function(btn) {
+      if (x>=btn.x && x<=btn.x+btn.w && y>=btn.y && y<=btn.y+btn.h) answerChosen(btn.idx);
+    });
+  } else if (state === 'end' && restartBtn) {
+    if (x>=restartBtn.x && x<=restartBtn.x+restartBtn.w && y>=restartBtn.y && y<=restartBtn.y+restartBtn.h) state = 'start';
+  }
+}
+canvas.onclick = function(e) { handleTap(e); };
+canvas.ontouchstart = function(e) { handleTap(e); };
+
+loop();
+</script>
+</body>
+</html>
