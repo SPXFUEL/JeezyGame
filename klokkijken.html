@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Klokkijken</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ── State ──────────────────────────────────────────────────
+const STATE = {
+  screen: 'start',   // start | play | result | win
+  level: 0,          // 0 = hele uren, 1 = halve uren
+  score: 0,
+  total: 0,
+  round: 0,
+  maxRounds: 10,
+  targetHour: 3,
+  targetMinute: 0,
+  options: [],
+  chosen: null,       // null | 'correct' | 'wrong'
+  animAngle: null,    // animatie voor wijzer
+  animStart: null,
+  animDuration: 700,
+  displayHour: 3,
+  displayMinute: 0,
+  stars: 0,
+  buttons: []
+};
+
+// ── Helpers ────────────────────────────────────────────────
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function timeStr(h, m) { return h + ':' + pad(m); }
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pickRound() {
+  STATE.buttons = [];
+  STATE.chosen = null;
+
+  const useHalf = STATE.level === 1;
+  const h = randomInt(1, 12);
+  const m = useHalf ? 30 : 0;
+  STATE.targetHour = h;
+  STATE.targetMinute = m;
+
+  // Genereer 3 unieke opties
+  const correct = timeStr(h, m);
+  const opts = [correct];
+
+  while (opts.length < 3) {
+    const rh = randomInt(1, 12);
+    const rm = useHalf ? (Math.random() < 0.5 ? 0 : 30) : 30;
+    const t = timeStr(rh, rm);
+    if (!opts.includes(t)) opts.push(t);
+  }
+
+  // Shuffle
+  for (let i = opts.length - 1; i > 0; i--) {
+    const j = randomInt(0, i);
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+
+  STATE.options = opts;
+
+  // Animatie: wijzer begint van 12 en draait naar doel
+  STATE.animStart = null;
+  STATE.displayHour = STATE.targetHour;
+  STATE.displayMinute = STATE.targetMinute;
+  STATE.animating = true;
+  STATE.animStartHour = 12;
+  STATE.animStartMinute = 0;
+}
+
+// ── Tekenfuncties ──────────────────────────────────────────
+function drawBackground() {
+  // Hemelachtergrond
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#0f3460');
+  grad.addColorStop(1, '#16213e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Sterren
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  const starPositions = [
+    [40,30],[90,60],[150,20],[200,50],[270,35],[330,55],[370,25],
+    [60,110],[310,90],[355,130],[20,150],[180,100]
+  ];
+  starPositions.forEach(([x,y]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5, 0, Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawClock(cx, cy, r, hourVal, minuteVal, progress) {
+  // progress: 0..1 voor animatie
+
+  // Schaduw klok
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 20;
+
+  // Klok achtergrond
+  const grad = ctx.createRadialGradient(cx - r*0.2, cy - r*0.2, r*0.1, cx, cy, r);
+  grad.addColorStop(0, '#fffde7');
+  grad.addColorStop(1, '#fff9c4');
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Rand
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = '#f57f17';
+  ctx.lineWidth = 8;
+  ctx.stroke();
+  ctx.restore();
+
+  // Uur-streepjes
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const isMajor = i % 3 === 0;
+    const len = isMajor ? r * 0.15 : r * 0.08;
+    const x1 = cx + Math.cos(ang) * (r - 10);
+    const y1 = cy + Math.sin(ang) * (r - 10);
+    const x2 = cx + Math.cos(ang) * (r - 10 - len);
+    const y2 = cy + Math.sin(ang) * (r - 10 - len);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = isMajor ? '#bf360c' : '#e65100';
+    ctx.lineWidth = isMajor ? 4 : 2;
+    ctx.stroke();
+  }
+
+  // Cijfers
+  ctx.fillStyle = '#bf360c';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.round(r * 0.22)}px Arial`;
+  for (let i = 1; i <= 12; i++) {
+    const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
+    const tx = cx + Math.cos(ang) * r * 0.72;
+    const ty = cy + Math.sin(ang) * r * 0.72;
+    ctx.fillText(i, tx, ty);
+  }
+
+  // Bereken geïnterpoleerde hoek voor animatie
+  let h = hourVal;
+  let m = minuteVal;
+
+  if (progress < 1 && STATE.animating) {
+    const startH = STATE.animStartHour;
+    const startM = STATE.animStartMinute;
+    h = startH + (hourVal - startH) * progress;
+    m = startM + (minuteVal - startM) * progress;
+  }
+
+  // Minutenwijzer
+  const minAng = (m / 60) * Math.PI * 2 - Math.PI / 2;
+  drawHand(cx, cy, minAng, r * 0.72, 5, '#1565c0');
+
+  // Uurwijzer
+  const hourFrac = (h % 12) + m / 60;
+  const hourAng = (hourFrac / 12) * Math.PI * 2 - Math.PI / 2;
+  drawHand(cx, cy, hourAng, r * 0.50, 7, '#b71c1c');
+
+  // Middelpunt
+  ctx.beginPath();
+  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#37474f';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#cfd8dc';
+  ctx.fill();
+}
+
+function drawHand(cx, cy, angle, length, width, color) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(angle) * length, cy + Math.sin(angle) * length);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = 4;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRoundedRect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+
+// ── Schermen ───────────────────────────────────────────────
+function drawStart() {
+  drawBackground();
+
+  // Titel banner
+  drawRoundedRect(30, 60, 330, 90, 20, '#f57f17', '#e65100', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 38px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('🕐 Klokkijken', 195, 115);
+
+  // Klok preview
+  drawClock(195, 310, 110, 3, 0, 1);
+
+  // Instructie
+  ctx.fillStyle = '#fff';
+  ctx.font = '22px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Hoe laat is het?', 195, 450);
+  ctx.font = '18px Arial';
+  ctx.fillStyle = '#aee4ff';
+  ctx.fillText('Kies het goede antwoord!', 195, 480);
+
+  // Start knop
+  drawRoundedRect(95, 530, 200, 80, 20, '#4caf50', '#388e3c', 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('SPELEN!', 195, 577);
+
+  STATE.buttons = [{ x: 95, y: 530, w: 200, h: 80, action: 'start' }];
+}
+
+function drawPlay(ts) {
+  drawBackground();
+
+  // Animatie voortgang
+  let progress = 1;
+  if (STATE.animating) {
+    if (!STATE.animStart) STATE.animStart = ts;
+    progress = Math.min(1, (ts - STATE.animStart) / STATE.animDuration);
+    if (progress >= 1) STATE.animating = false;
+  }
+
+  // Score balk
+  drawRoundedRect(10, 10, 370, 50, 12, 'rgba(255,255,255,0.15)', null);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('⭐ ' + STATE.score, 30, 42);
+  ctx.textAlign = 'right';
+  ctx.fillText('Ronde ' + (STATE.round + 1) + '/' + STATE.maxRounds, 370, 42);
+
+  // Level badge
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffe082';
+  ctx.font = '16px Arial';
+  ctx.fillText(STATE.level === 0 ? 'Hele uren' : 'Halve uren', 195, 42);
+
+  // Klok
+  drawClock(195, 240, 115, STATE.displayHour, STATE.displayMinute, progress);
+
+  // Vraag
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Hoe laat is het?', 195, 390);
+
+  // Antwoord knoppen
+  STATE.buttons = [];
+  const btnW = 100, btnH = 80;
+  const startX = (390 - 3 * btnW - 2 * 15) / 2;
+  const btnY = 415;
+
+  STATE.options.forEach(function(opt, i) {
+    const bx = startX + i * (btnW + 15);
+    let bg = '#1565c0';
+    let border = '#0d47a1';
+    let textColor = '#fff';
+
+    if (STATE.chosen !== null) {
+      const correctTime = timeStr(STATE.targetHour, STATE.targetMinute);
+      if (opt === correctTime) {
+        bg = '#2e7d32'; border = '#1b5e20';
+      } else if (opt === STATE.chosen) {
+        bg = '#c62828'; border = '#b71c1c';
+      } else {
+        bg = 'rgba(21,101,192,0.4)'; border = 'rgba(13,71,161,0.4)';
+      }
+    }
+
+    drawRoundedRect(bx, btnY, btnW, btnH, 16, bg, border, 3);
+    ctx.fillStyle = textColor;
+    ctx.font = 'bold 26px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(opt, bx + btnW / 2, btnY + btnH / 2 + 8);
+
+    if (STATE.chosen === null) {
+      STATE.buttons.push({ x: bx, y: btnY, w: btnW, h: btnH, action: 'answer', value: opt });
+    }
+  });
+
+  // Feedback emoji
+  if (STATE.chosen !== null) {
+    const correctTime = timeStr(STATE.targetHour, STATE.targetMinute);
+    const isRight = STATE.chosen === correctTime;
+    ctx.font = '60px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(isRight ? '😄' : '😅', 195, 545);
+    ctx.fillStyle = isRight ? '#a5d6a7' : '#ef9a9a';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText(isRight ? 'Super goed!' : 'Het was ' + correctTime, 195, 600);
+
+    // Volgende knop
+    drawRoundedRect(120, 625, 150, 60, 15, '#ff9800', '#e65100', 3);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText('Verder ➜', 195, 661);
+    STATE.buttons.push({ x: 120, y: 625, w: 150, h: 60, action: 'next' });
+  }
+}
+
+function drawResult() {
+  drawBackground();
+
+  const pct = Math.round((STATE.score / STATE.maxRounds) * 100);
+  let stars = pct >= 90 ? 3 : pct >= 60 ? 2 : 1;
+  STATE.stars = stars;
+
+  drawRoundedRect(20, 80, 350, 120, 20, 'rgba(255,255,255,0.15)', null);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Klaar! 🎉', 195, 140);
+  ctx.font = 'bold 28px Arial';
+  ctx.fillStyle = '#ffe082';
+  ctx.fillText(STATE.score + ' / ' + STATE.maxRounds + ' goed', 195, 185);
+
+  // Sterren
+  ctx.font = '60px Arial';
+  const starRow = ['⭐','⭐','⭐'];
+  for (let i = 0; i < 3; i++) {
+    ctx.globalAlpha = i < stars ? 1 : 0.25;
+    ctx.fillText('⭐', 100 + i * 100, 300);
+  }
+  ctx.globalAlpha = 1;
+
+  // Klok als decoratie
+  drawClock(195, 470, 80, 12, 0, 1);
+
+  STATE.buttons = [];
+  // Opnieuw
+  drawRoundedRect(20, 570, 160, 80, 16, '#1565c0', '#0d47a1', 3);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Opnieuw', 100, 617);
+  STATE.buttons.push({ x: 20, y: 570, w: 160, h: 80, action: 'restart' });
+
+  // Volgend level
+  if (STATE.level === 0 && pct >= 60) {
+    drawRoundedRect(210, 570, 160, 80, 16, '#4caf50', '#388e3c', 3);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText('Halve uren →', 290, 617);
+    STATE.buttons.push({ x: 210, y: 570, w: 160, h: 80, action: 'nextlevel' });
+  }
+}
+
+// ── Game loop ──────────────────────────────────────────────
+function loop(ts) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (STATE.screen === 'start') drawStart();
+  else if (STATE.screen === 'play') drawPlay(ts);
+  else if (STATE.screen === 'result') drawResult();
+
+  requestAnimationFrame(loop);
+}
+
+// ── Input ──────────────────────────────────────────────────
+function handleTap(x, y) {
+  for (let i = 0; i < STATE.buttons.length; i++) {
+    const b = STATE.buttons[i];
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+      handleAction(b.action, b.value);
+      return;
+    }
+  }
+}
+
+function handleAction(action, value) {
+  if (action === 'start') {
+    STATE.screen = 'play';
+    STATE.score = 0;
+    STATE.round = 0;
+    STATE.level = 0;
+    pickRound();
+  } else if (action === 'answer') {
+    if (STATE.chosen !== null) return;
+    STATE.chosen = value;
+    const correct = timeStr(STATE.targetHour, STATE.targetMinute);
+    if (value === correct) STATE.score++;
+    STATE.total++;
+  } else if (action === 'next') {
+    STATE.round++;
+    if (STATE.round >= STATE.maxRounds) {
+      STATE.screen = 'result';
+    } else {
+      pickRound();
+    }
+  } else if (action === 'restart') {
+    STATE.screen = 'play';
+    STATE.score = 0;
+    STATE.round = 0;
+    STATE.level = 0;
+    pickRound();
+  } else if (action === 'nextlevel') {
+    STATE.screen = 'play';
+    STATE.score = 0;
+    STATE.round = 0;
+    STATE.level = 1;
+    pickRound();
+  }
+}
+
+canvas.ontouchstart = function(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const touch = e.changedTouches[0];
+  handleTap(
+    (touch.clientX - rect.left) * scaleX,
+    (touch.clientY - rect.top) * scaleY
+  );
+};
+
+canvas.onclick = function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  handleTap(
+    (e.clientX - rect.left) * scaleX,
+    (e.clientY - rect.top) * scaleY
+  );
+};
+
+// ── Start ──────────────────────────────────────────────────
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
