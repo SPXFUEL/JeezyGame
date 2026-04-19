@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Letterraket 🚀</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0F0A2E;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Segoe UI', 'Arial Rounded MT Bold', Arial, sans-serif;
+    touch-action: manipulation;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+const WORDS = [
+  { word: "KAT",  letters: ["K","A","T"] },
+  { word: "BOM",  letters: ["B","O","M"] },
+  { word: "VIS",  letters: ["V","I","S"] },
+  { word: "DAK",  letters: ["D","A","K"] },
+  { word: "POT",  letters: ["P","O","T"] },
+  { word: "REM",  letters: ["R","E","M"] },
+  { word: "BAL",  letters: ["B","A","L"] },
+  { word: "ZON",  letters: ["Z","O","N"] },
+  { word: "MAT",  letters: ["M","A","T"] },
+  { word: "PEN",  letters: ["P","E","N"] },
+  { word: "WEG",  letters: ["W","E","G"] },
+  { word: "MUS",  letters: ["M","U","S"] },
+  { word: "ROT",  letters: ["R","O","T"] },
+  { word: "TAK",  letters: ["T","A","K"] },
+  { word: "BUS",  letters: ["B","U","S"] },
+  { word: "LUP",  letters: ["L","U","P"] },
+  { word: "HAM",  letters: ["H","A","M"] },
+  { word: "GAS",  letters: ["G","A","S"] },
+  { word: "KOP",  letters: ["K","O","P"] },
+  { word: "NET",  letters: ["N","E","T"] },
+];
+
+const ALL_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const GAME_DURATION = 60;
+const ROCKET_MAX_Y_FRAC  = 0.18; // rocket top boundary (fraction of canvas height)
+const ROCKET_START_Y_FRAC = 0.55;
+const ROCKET_BOTTOM_FRAC  = 0.78;
+
+// ─── CANVAS SETUP ──────────────────────────────────────────────────────────
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  const maxW = Math.min(window.innerWidth || 390, 480);
+  const maxH = window.innerHeight || 700;
+  canvas.width  = maxW;
+  canvas.height = maxH;
+}
+resize();
+setTimeout(resize, 150);
+window.addEventListener("resize", resize);
+
+// ─── STATE ─────────────────────────────────────────────────────────────────
+let state = "start"; // start | playing | gameover
+let score = 0;
+let highScore = parseInt(localStorage.getItem("letterraket_hs") || "0");
+let timeLeft = GAME_DURATION;
+let timerInterval = null;
+
+let currentWord = null;
+let missingIndex = 0;
+let options = [];       // [{letter, x, y, w, h}]
+let optionLetters = []; // the 4 letter strings
+
+let rocketY = 0;
+let rocketTargetY = 0;
+let rocketVel = 0;
+
+let stars = [];
+let particles = [];
+let rocketFlame = [];
+let shakeFrames = 0;
+let shakeAmp = 0;
+
+let animFrame = null;
+let lastTime = 0;
+
+// ─── STARS ─────────────────────────────────────────────────────────────────
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 80; i++) {
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 2 + 0.5,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.3 + 0.05,
+    });
+  }
+}
+
+// ─── PARTICLES ─────────────────────────────────────────────────────────────
+function spawnParticles(x, y, color, count = 18) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+    const speed = Math.random() * 5 + 2;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: Math.random() * 0.03 + 0.02,
+      r: Math.random() * 6 + 3,
+      color,
+    });
+  }
+}
+
+function spawnRocketFlame() {
+  const rocketCenterX = canvas.width / 2;
+  const flameY = rocketY + getRocketHeight() * 0.9;
+  for (let i = 0; i < 3; i++) {
+    rocketFlame.push({
+      x: rocketCenterX + (Math.random() - 0.5) * 16,
+      y: flameY,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: Math.random() * 3 + 2,
+      life: 1,
+      decay: Math.random() * 0.06 + 0.04,
+      r: Math.random() * 8 + 4,
+    });
+  }
+}
+
+// ─── WORD LOGIC ────────────────────────────────────────────────────────────
+function pickWord() {
+  const w = WORDS[Math.floor(Math.random() * WORDS.length)];
+  currentWord = w;
+  missingIndex = Math.floor(Math.random() * w.letters.length);
+  const correctLetter = w.letters[missingIndex];
+
+  // Build 3 distractors
+  const pool = ALL_LETTERS.filter(l => l !== correctLetter);
+  shuffle(pool);
+  const distractors = pool.slice(0, 3);
+  optionLetters = shuffle([correctLetter, ...distractors]);
+  buildOptionButtons();
+}
+
+function buildOptionButtons() {
+  const n = optionLetters.length;
+  const btnSize = Math.min(Math.floor(canvas.width / (n + 1)), 90);
+  const gap = Math.floor((canvas.width - n * btnSize) / (n + 1));
+  const y = canvas.height - btnSize - 24;
+  options = optionLetters.map((letter, i) => ({
+    letter,
+    x: gap + i * (btnSize + gap),
+    y,
+    w: btnSize,
+    h: btnSize,
+  }));
+}
+
+function getDisplayWord() {
+  return currentWord.letters.map((l, i) => i === missingIndex ? "_" : l).join(" ");
+}
+
+// ─── HELPERS ───────────────────────────────────────────────────────────────
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function getRocketHeight() { return canvas.height * 0.14; }
+function getRocketWidth()  { return getRocketHeight() * 0.45; }
+
+// ─── GAME FLOW ─────────────────────────────────────────────────────────────
+function startGame() {
+  state = "playing";
+  score = 0;
+  timeLeft = GAME_DURATION;
+  particles = [];
+  rocketFlame = [];
+  rocketY = canvas.height * ROCKET_START_Y_FRAC;
+  rocketTargetY = rocketY;
+  rocketVel = 0;
+  shakeFrames = 0;
+  initStars();
+  pickWord();
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      endGame();
+    }
+  }, 1000);
+}
+
+function endGame() {
+  clearInterval(timerInterval);
+  state = "gameover";
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem("letterraket_hs", highScore);
+  }
+}
+
+function handleAnswer(letter) {
+  if (state !== "playing") return;
+  const correct = currentWord.letters[missingIndex];
+  if (letter === correct) {
+    score += 10;
+    const rocketCX = canvas.width / 2;
+    spawnParticles(rocketCX, rocketY + getRocketHeight() / 2, "#FFD700", 22);
+    spawnParticles(rocketCX, rocketY + getRocketHeight() / 2, "#6C63FF", 12);
+    rocketTargetY = Math.max(canvas.height * ROCKET_MAX_Y_FRAC, rocketY - canvas.height * 0.14);
+    pickWord();
+  } else {
+    shakeFrames = 14;
+    shakeAmp = 10;
+    rocketTargetY = Math.min(canvas.height * ROCKET_BOTTOM_FRAC, rocketY + canvas.height * 0.08);
+    score = Math.max(0, score - 5);
+  }
+}
+
+// ─── INPUT ─────────────────────────────────────────────────────────────────
+function getCanvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  let cx, cy;
+  if (e.touches) {
+    cx = (e.touches[0].clientX - rect.left) * scaleX;
+    cy = (e.touches[0].clientY - rect.top)  * scaleY;
+  } else {
+    cx = (e.clientX - rect.left) * scaleX;
+    cy = (e.clientY - rect.top)  * scaleY;
+  }
+  return { x: cx, y: cy };
+}
+
+function onTap(e) {
+  e.preventDefault();
+  const { x, y } = getCanvasPos(e);
+
+  if (state === "start" || state === "gameover") {
+    // Check restart / start button
+    const btnW = 220, btnH = 60;
+    const btnX = canvas.width / 2 - btnW / 2;
+    const btnY = canvas.height * 0.65;
+    if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+      startGame();
+    }
+    return;
+  }
+
+  if (state === "playing") {
+    for (const opt of options) {
+      if (x >= opt.x && x <= opt.x + opt.w && y >= opt.y && y <= opt.y + opt.h) {
+        handleAnswer(opt.letter);
+        return;
+      }
+    }
+  }
+}
+
+canvas.addEventListener("click", onTap);
+canvas.addEventListener("touchstart", onTap, { passive: false });
+
+// ─── DRAWING ───────────────────────────────────────────────────────────────
+function drawStars(t) {
+  for (const s of stars) {
+    s.twinkle += s.speed * 0.05;
+    const alpha = 0.4 + 0.6 * Math.abs(Math.sin(s.twinkle));
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fill();
+  }
+}
+
+function drawRocket(cx, y) {
+  const h = getRocketHeight();
+  const w = getRocketWidth();
+
+  // Body
+  ctx.save();
+  const bodyGrad = ctx.createLinearGradient(cx - w/2, y, cx + w/2, y);
+  bodyGrad.addColorStop(0, "#C0C0FF");
+  bodyGrad.addColorStop(0.5, "#ffffff");
+  bodyGrad.addColorStop(1, "#7070CC");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.roundRect(cx - w/2, y + h*0.25, w, h*0.6, w*0.2);
+  ctx.fill();
+
+  // Nose cone
+  ctx.fillStyle = "#FF6B6B";
+  ctx.beginPath();
+  ctx.moveTo(cx, y);
+  ctx.lineTo(cx - w/2, y + h*0.28);
+  ctx.lineTo(cx + w/2, y + h*0.28);
+  ctx.closePath();
+  ctx.fill();
+
+  // Window
+  ctx.beginPath();
+  ctx.arc(cx, y + h*0.42, w*0.22, 0, Math.PI*2);
+  ctx.fillStyle = "#00E5FF";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx - w*0.07, y + h*0.39, w*0.08, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.fill();
+
+  // Left fin
+  ctx.fillStyle = "#6C63FF";
+  ctx.beginPath();
+  ctx.moveTo(cx - w/2, y + h*0.6);
+  ctx.lineTo(cx - w*0.85, y + h*0.95);
+  ctx.lineTo(cx - w/2, y + h*0.85);
+  ctx.closePath();
+  ctx.fill();
+
+  // Right fin
+  ctx.beginPath();
+  ctx.moveTo(cx + w/2, y + h*0.6);
+  ctx.lineTo(cx + w*0.85, y + h*0.95);
+  ctx.lineTo(cx + w/2, y + h*0.85);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawFlame() {
+  for (const p of rocketFlame) {
+    const t = p.life;
+    const r = parseInt(255 * Math.min(1, t * 1.5));
+    const g = parseInt(160 * t);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * t, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},0,${t * 0.9})`;
+    ctx.fill();
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = p.color + Math.floor(p.life * 255).toString(16).padStart(2, "0");
+    ctx.fill();
+  }
+}
+
+function drawWordPanel() {
+  const panelW = canvas.width * 0.78;
+  const panelH = 76;
+  const panelX = (canvas.width - panelW) / 2;
+  const panelY = 90;
+  const radius = 18;
+
+  ctx.save();
+  ctx.shadowColor = "#6C63FF";
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = "rgba(30,20,70,0.88)";
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, panelH, radius);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${Math.floor(panelH * 0.62)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(getDisplayWord(), canvas.width / 2, panelY + panelH / 2);
+  ctx.restore();
+}
+
+function drawOptions() {
+  for (const opt of options) {
+    const isCorrect = opt.letter === currentWord.letters[missingIndex];
+
+    // Button background
+    ctx.save();
+    ctx.shadowColor = "#6C63FF";
+    ctx.shadowBlur = 14;
+
+    const grad = ctx.createLinearGradient(opt.x, opt.y, opt.x, opt.y + opt.h);
+    grad.addColorStop(0, "#3A2E8C");
+    grad.addColorStop(1, "#1A1240");
+    ctx.fillStyle = grad;
+    ctx.strokeStyle = "#6C63FF";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(opt.x, opt.y, opt.w, opt.h, 14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Letter
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${Math.floor(opt.h * 0.56)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(opt.letter, opt.x + opt.w / 2, opt.y + opt.h / 2);
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  // Score
+  ctx.save();
+  ctx.fillStyle = "#FFD700";
+  ctx.font = `bold ${Math.floor(canvas.width * 0.06)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`⭐ ${score}`, 18, 18);
+
+  // Timer
+  const timerColor = timeLeft <= 10 ? "#FF6B6B" : "#6C63FF";
+  ctx.fillStyle = timerColor;
+  ctx.font = `bold ${Math.floor(canvas.width * 0.06)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.textAlign = "right";
+  ctx.fillText(`⏱ ${timeLeft}s`, canvas.width - 18, 18);
+  ctx.restore();
+
+  // Timer bar
+  const barW = canvas.width * 0.7;
+  const barX = (canvas.width - barW) / 2;
+  const barY = 52;
+  const barH = 8;
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 4);
+  ctx.fill();
+  const frac = Math.max(0, timeLeft / GAME_DURATION);
+  const barColor = timeLeft <= 10 ? "#FF6B6B" : "#6C63FF";
+  ctx.fillStyle = barColor;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW * frac, barH, 4);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawStartScreen() {
+  // Title
+  ctx.save();
+  ctx.textAlign = "center";
+
+  ctx.font = `bold ${Math.floor(canvas.width * 0.13)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.fillStyle = "#6C63FF";
+  ctx.shadowColor = "#6C63FF";
+  ctx.shadowBlur = 30;
+  ctx.fillText("🚀", canvas.width / 2, canvas.height * 0.22);
+  ctx.shadowBlur = 0;
+
+  ctx.font = `bold ${Math.floor(canvas.width * 0.12)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.shadowColor = "#6C63FF";
+  ctx.shadowBlur = 18;
+  ctx.fillText("Letterraket", canvas.width / 2, canvas.height * 0.36);
+  ctx.shadowBlur = 0;
+
+  ctx.font = `${Math.floor(canvas.width * 0.055)}px Arial, sans-serif`;
+  ctx.fillStyle = "#A99FFF";
+  ctx.fillText("Vind de ontbrekende letter!", canvas.width / 2, canvas.height * 0.46);
+
+  if (highScore > 0) {
+    ctx.font = `bold ${Math.floor(canvas.width * 0.05)}px Arial, sans-serif`;
+    ctx.fillStyle = "#FFD700";
+    ctx.fillText(`Hoog: ${highScore}`, canvas.width / 2, canvas.height * 0.54);
+  }
+
+  drawBigButton("▶  Spelen!", canvas.height * 0.65);
+  ctx.restore();
+}
+
+function drawGameOverScreen() {
+  ctx.save();
+  ctx.textAlign = "center";
+
+  ctx.font = `bold ${Math.floor(canvas.width * 0.1)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.fillStyle = "#FF6B6B";
+  ctx.shadowColor = "#FF6B6B";
+  ctx.shadowBlur = 20;
+  ctx.fillText("Tijd op!", canvas.width / 2, canvas.height * 0.25);
+  ctx.shadowBlur = 0;
+
+  ctx.font = `bold ${Math.floor(canvas.width * 0.08)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.fillStyle = "#FFD700";
+  ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height * 0.37);
+
+  if (score >= highScore && score > 0) {
+    ctx.font = `bold ${Math.floor(canvas.width * 0.065)}px Arial, sans-serif`;
+    ctx.fillStyle = "#6C63FF";
+    ctx.shadowColor = "#6C63FF";
+    ctx.shadowBlur = 14;
+    ctx.fillText("🏆 Nieuw record!", canvas.width / 2, canvas.height * 0.47);
+    ctx.shadowBlur = 0;
+  } else if (highScore > 0) {
+    ctx.font = `${Math.floor(canvas.width * 0.05)}px Arial, sans-serif`;
+    ctx.fillStyle = "#A99FFF";
+    ctx.fillText(`Beste: ${highScore}`, canvas.width / 2, canvas.height * 0.47);
+  }
+
+  drawBigButton("🔄  Opnieuw!", canvas.height * 0.62);
+  ctx.restore();
+}
+
+function drawBigButton(label, y) {
+  const btnW = 220, btnH = 60;
+  const btnX = canvas.width / 2 - btnW / 2;
+
+  ctx.save();
+  ctx.shadowColor = "#6C63FF";
+  ctx.shadowBlur = 20;
+  const grad = ctx.createLinearGradient(btnX, y, btnX, y + btnH);
+  grad.addColorStop(0, "#7B72FF");
+  grad.addColorStop(1, "#4B44CC");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(btnX, y, btnW, btnH, 16);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${Math.floor(btnH * 0.45)}px 'Arial Rounded MT Bold', Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, canvas.width / 2, y + btnH / 2);
+  ctx.restore();
+}
+
+function drawRocketTrail(cx, y) {
+  // Altitude bar on left side
+  const barH = canvas.height * 0.45;
+  const barX = 14;
+  const barY = canvas.height * 0.2;
+  const barW = 10;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 5);
+  ctx.fill();
+
+  const topBound = canvas.height * ROCKET_MAX_Y_FRAC;
+  const botBound = canvas.height * ROCKET_BOTTOM_FRAC;
+  const frac = 1 - (rocketY - topBound) / (botBound - topBound);
+  const fillH = barH * Math.max(0, Math.min(1, frac));
+
+  const altGrad = ctx.createLinearGradient(0, barY + barH, 0, barY);
+  altGrad.addColorStop(0, "#6C63FF");
+  altGrad.addColorStop(1, "#00E5FF");
+  ctx.fillStyle = altGrad;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY + barH - fillH, barW, fillH, 5);
+  ctx.fill();
+
+  ctx.font = `${Math.floor(barW * 1.1)}px Arial, sans-serif`;
+  ctx.fillStyle = "#A99FFF";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText("▲", barX + barW/2, barY - 16);
+  ctx.restore();
+}
+
+// ─── MAIN LOOP ─────────────────────────────────────────────────────────────
+function tick(ts) {
+  const dt = Math.min((ts - lastTime) / 16.67, 3); // normalized to 60fps
+  lastTime = ts;
+
+  // Clear
+  ctx.fillStyle = "#0F0A2E";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Shake offset
+  let sx = 0, sy = 0;
+  if (shakeFrames > 0) {
+    sx = (Math.random() - 0.5) * shakeAmp;
+    sy = (Math.random() - 0.5) * shakeAmp * 0.5;
+    shakeFrames--;
+    shakeAmp *= 0.88;
+    if (shakeFrames === 0) shakeAmp = 0;
+  }
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  drawStars(ts);
+
+  if (state === "start") {
+    drawStartScreen();
+  } else if (state === "playing" || state === "gameover") {
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 0.15 * dt; // gravity
+      p.life -= p.decay * dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Update flame
+    spawnRocketFlame();
+    for (let i = rocketFlame.length - 1; i >= 0; i--) {
+      const p = rocketFlame[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= p.decay * dt;
+      if (p.life <= 0) rocketFlame.splice(i, 1);
+    }
+
+    // Move rocket toward target
+    const dy = rocketTargetY - rocketY;
+    rocketVel += dy * 0.06 * dt;
+    rocketVel *= Math.pow(0.88, dt);
+    rocketY += rocketVel * dt;
+    // Clamp
+    rocketY = Math.max(canvas.height * ROCKET_MAX_Y_FRAC,
+               Math.min(canvas.height * ROCKET_BOTTOM_FRAC, rocketY));
+
+    drawFlame();
+    drawParticles();
+    drawRocketTrail(canvas.width / 2, rocketY);
+
+    if (state === "playing") {
+      drawWordPanel();
+      drawOptions();
+      drawHUD();
+    }
+    drawRocket(canvas.width / 2, rocketY);
+
+    if (state === "gameover") {
+      // Dim overlay
+      ctx.fillStyle = "rgba(15,10,46,0.72)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawGameOverScreen();
+    }
+  }
+
+  ctx.restore();
+  animFrame = requestAnimationFrame(tick);
+}
+
+// ─── INIT ──────────────────────────────────────────────────────────────────
+initStars();
+lastTime = performance.now();
+animFrame = requestAnimationFrame(tick);
+
+// Polyfill roundRect for older browsers
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (typeof r === "number") r = [r, r, r, r];
+    const [tl, tr, br, bl] = Array.isArray(r) ? [...r, ...r].slice(0, 4) : [r, r, r, r];
+    this.moveTo(x + tl, y);
+    this.lineTo(x + w - tr, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + tr);
+    this.lineTo(x + w, y + h - br);
+    this.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+    this.lineTo(x + bl, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - bl);
+    this.lineTo(x, y + tl);
+    this.quadraticCurveTo(x, y, x + tl, y);
+    this.closePath();
+    return this;
+  };
+}
+</script>
+</body>
+</html>
