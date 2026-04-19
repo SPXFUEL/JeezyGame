@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Alfabet Leren</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+    overflow: hidden;
+  }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="390" height="700"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// Schaal voor grote schermen
+(function scaleCanvas() {
+  const ratio = Math.min(window.innerWidth / 390, window.innerHeight / 700);
+  canvas.style.width = (390 * ratio) + 'px';
+  canvas.style.height = (700 * ratio) + 'px';
+})();
+
+// ---- DATA ----
+const rounds = [
+  { letter: 'A', correct: 0, options: [{ e: '🍎', w: 'Appel' }, { e: '🐘', w: 'Olifant' }, { e: '🚗', w: 'Auto' }], correctIndex: 0 },
+  { letter: 'B', correct: 1, options: [{ e: '🌸', w: 'Bloem' }, { e: '🐻', w: 'Beer' }, { e: '🌙', w: 'Maan' }], correctIndex: 1 },
+  { letter: 'C', correct: 2, options: [{ e: '🐬', w: 'Dolfijn' }, { e: '🌈', w: 'Regenboog' }, { e: '🎂', w: 'Cake' }], correctIndex: 2 },
+  { letter: 'D', correct: 0, options: [{ e: '🐉', w: 'Draak' }, { e: '🐰', w: 'Konijn' }, { e: '🌻', w: 'Zonnebloem' }], correctIndex: 0 },
+  { letter: 'E', correct: 1, options: [{ e: '🍓', w: 'Aardbei' }, { e: '🥚', w: 'Ei' }, { e: '🐳', w: 'Walvis' }], correctIndex: 1 },
+  { letter: 'F', correct: 2, options: [{ e: '🌿', w: 'Plant' }, { e: '🐢', w: 'Schildpad' }, { e: '🚲', w: 'Fiets' }], correctIndex: 2 },
+  { letter: 'G', correct: 0, options: [{ e: '🦒', w: 'Giraf' }, { e: '🍕', w: 'Pizza' }, { e: '🌊', w: 'Golf' }], correctIndex: 0 },
+  { letter: 'H', correct: 1, options: [{ e: '🐸', w: 'Kikker' }, { e: '🐶', w: 'Hond' }, { e: '🎈', w: 'Ballon' }], correctIndex: 1 },
+  { letter: 'I', correct: 2, options: [{ e: '🦋', w: 'Vlinder' }, { e: '🍇', w: 'Druiven' }, { e: '🍦', w: 'IJs' }], correctIndex: 2 },
+  { letter: 'J', correct: 0, options: [{ e: '🧥', w: 'Jas' }, { e: '🐠', w: 'Vis' }, { e: '🌺', w: 'Bloem' }], correctIndex: 0 },
+  { letter: 'K', correct: 1, options: [{ e: '🐝', w: 'Bij' }, { e: '🐱', w: 'Kat' }, { e: '🌵', w: 'Cactus' }], correctIndex: 1 },
+  { letter: 'L', correct: 2, options: [{ e: '🐧', w: 'Pinguïn' }, { e: '🍄', w: 'Paddenstoel' }, { e: '🦁', w: 'Leeuw' }], correctIndex: 2 },
+  { letter: 'M', correct: 0, options: [{ e: '🌙', w: 'Maan' }, { e: '🐙', w: 'Octopus' }, { e: '🎠', w: 'Carrousel' }], correctIndex: 0 },
+  { letter: 'N', correct: 1, options: [{ e: '🦊', w: 'Vos' }, { e: '🦏', w: 'Neushoorn' }, { e: '🏠', w: 'Huis' }], correctIndex: 1 },
+  { letter: 'O', correct: 2, options: [{ e: '🐓', w: 'Haan' }, { e: '🎀', w: 'Strik' }, { e: '🐘', w: 'Olifant' }], correctIndex: 2 },
+  { letter: 'P', correct: 0, options: [{ e: '🐴', w: 'Paard' }, { e: '🌍', w: 'Aarde' }, { e: '🦆', w: 'Eend' }], correctIndex: 0 },
+  { letter: 'R', correct: 1, options: [{ e: '🐻', w: 'Beer' }, { e: '🚀', w: 'Raket' }, { e: '🌙', w: 'Maan' }], correctIndex: 1 },
+  { letter: 'S', correct: 2, options: [{ e: '🌺', w: 'Bloem' }, { e: '🐸', w: 'Kikker' }, { e: '⭐', w: 'Ster' }], correctIndex: 2 },
+  { letter: 'T', correct: 0, options: [{ e: '🐯', w: 'Tijger' }, { e: '🍋', w: 'Citroen' }, { e: '🎸', w: 'Gitaar' }], correctIndex: 0 },
+  { letter: 'V', correct: 1, options: [{ e: '🦅', w: 'Adelaar' }, { e: '✈️', w: 'Vliegtuig' }, { e: '🌿', w: 'Plant' }], correctIndex: 1 },
+];
+
+// ---- STATE ----
+let currentRound = 0;
+let score = 0;
+let totalQuestions = rounds.length;
+let feedback = null; // { correct: bool, selectedIdx: int, timer: int }
+let stars = [];
+let gameOver = false;
+let shuffledRounds = [];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function initGame() {
+  shuffledRounds = shuffle(rounds);
+  currentRound = 0;
+  score = 0;
+  feedback = null;
+  stars = [];
+  gameOver = false;
+  draw();
+}
+
+// ---- AUDIO ----
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  return audioCtx;
+}
+
+function playCorrect() {
+  try {
+    const ac = getAudioCtx();
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      const t = ac.currentTime + i * 0.12;
+      gain.gain.setValueAtTime(0.3, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.start(t);
+      osc.stop(t + 0.25);
+    });
+  } catch (e) {}
+}
+
+function playWrong() {
+  try {
+    const ac = getAudioCtx();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.frequency.value = 200;
+    osc.type = 'sawtooth';
+    gain.gain.setValueAtTime(0.2, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + 0.4);
+  } catch (e) {}
+}
+
+function playWin() {
+  try {
+    const ac = getAudioCtx();
+    const melody = [523, 659, 784, 1047, 784, 1047, 1319];
+    melody.forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      const t = ac.currentTime + i * 0.15;
+      gain.gain.setValueAtTime(0.3, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+  } catch (e) {}
+}
+
+// ---- BUTTONS ----
+const buttons = [];
+
+function registerButton(x, y, w, h, id) {
+  buttons.push({ x, y, w, h, id });
+}
+
+function clearButtons() {
+  buttons.length = 0;
+}
+
+function getCanvasXY(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = 390 / rect.width;
+  const scaleY = 700 / rect.height;
+  let cx, cy;
+  if (e.touches) {
+    cx = (e.touches[0].clientX - rect.left) * scaleX;
+    cy = (e.touches[0].clientY - rect.top) * scaleY;
+  } else {
+    cx = (e.clientX - rect.left) * scaleX;
+    cy = (e.clientY - rect.top) * scaleY;
+  }
+  return { x: cx, y: cy };
+}
+
+function handleInput(e) {
+  e.preventDefault();
+  if (feedback && feedback.timer > 0) return;
+  const { x, y } = getCanvasXY(e);
+  for (const btn of buttons) {
+    if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+      handleButtonPress(btn.id);
+      return;
+    }
+  }
+}
+
+canvas.onclick = handleInput;
+canvas.ontouchstart = handleInput;
+
+// ---- STARS PARTICLE ----
+function spawnStars(x, y) {
+  for (let i = 0; i < 15; i++) {
+    const angle = (Math.PI * 2 * i) / 15;
+    const speed = 3 + Math.random() * 5;
+    stars.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 8 + Math.random() * 12,
+      color: ['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#FF8B94'][Math.floor(Math.random() * 5)],
+      life: 1.0
+    });
+  }
+}
+
+// ---- BUTTON PRESS ----
+function handleButtonPress(id) {
+  if (gameOver) {
+    if (id === 'restart') { initGame(); return; }
+    return;
+  }
+  if (feedback) return;
+
+  const round = shuffledRounds[currentRound];
+  if (id === 'opt0' || id === 'opt1' || id === 'opt2') {
+    const idx = parseInt(id.replace('opt', ''));
+    const correct = idx === round.correctIndex;
+    feedback = { correct, selectedIdx: idx, timer: 90 };
+    if (correct) {
+      score++;
+      playCorrect();
+      spawnStars(canvas.width / 2, 350);
+    } else {
+      playWrong();
+    }
+  }
+}
+
+// ---- COLORS ----
+const BG_TOP = '#0f3460';
+const BG_BOT = '#16213e';
+const ACCENT = ['#FF6B6B', '#FFE66D', '#4ECDC4', '#95E1D3', '#FF8B94', '#C3A6FF'];
+
+function letterColor(l) {
+  const i = l.charCodeAt(0) % ACCENT.length;
+  return ACCENT[i];
+}
+
+// ---- DRAW ----
+function drawRoundedRect(x, y, w, h, r, fill, stroke, sw) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = sw || 2; ctx.stroke(); }
+}
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, 700);
+  grad.addColorStop(0, BG_TOP);
+  grad.addColorStop(1, BG_BOT);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 390, 700);
+
+  // Sterretjes achtergrond
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  const bgStars = [[30, 40], [80, 120], [340, 60], [300, 150], [200, 80], [150, 30], [360, 200], [20, 300]];
+  bgStars.forEach(([sx, sy]) => {
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawHeader() {
+  // Scorebalk
+  drawRoundedRect(10, 10, 370, 55, 15, 'rgba(255,255,255,0.1)', 'rgba(255,255,255,0.2)', 1);
+
+  ctx.fillStyle = '#FFE66D';
+  ctx.font = 'bold 20px "Comic Sans MS", cursive';
+  ctx.textAlign = 'left';
+  ctx.fillText('⭐ ' + score + ' / ' + totalQuestions, 20, 45);
+
+  const rNum = currentRound + 1;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'right';
+  ctx.fillText('Vraag ' + rNum + ' van ' + totalQuestions, 370, 45);
+}
+
+function drawLetterCard(letter) {
+  const col = letterColor(letter);
+  // Kaart
+  const cx = 195, cy = 220;
+  drawRoundedRect(cx - 90, cy - 90, 180, 180, 30, 'rgba(255,255,255,0.12)', col, 4);
+
+  // Glow
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = col;
+  ctx.font = 'bold 130px "Comic Sans MS", cursive';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(letter, cx, cy);
+  ctx.shadowBlur = 0;
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '18px "Comic Sans MS", cursive';
+  ctx.fillText('Welk woord begint met ' + letter + '?', cx, cy + 115);
+}
+
+function drawOptions(round) {
+  clearButtons();
+  registerButton(10, 10, 370, 55, 'header');
+
+  const btnY = 440;
+  const btnW = 110;
+  const btnH = 110;
+  const spacing = (390 - 3 * btnW) / 4;
+
+  round.options.forEach((opt, i) => {
+    const bx = spacing + i * (btnW + spacing);
+    const by = btnY;
+
+    let bgColor = 'rgba(255,255,255,0.15)';
+    let border = 'rgba(255,255,255,0.3)';
+    let borderW = 2;
+
+    if (feedback) {
+      if (i === round.correctIndex) {
+        bgColor = 'rgba(100,220,100,0.4)';
+        border = '#6be26b';
+        borderW = 4;
+      } else if (i === feedback.selectedIdx && !feedback.correct) {
+        bgColor = 'rgba(220,80,80,0.4)';
+        border = '#e26b6b';
+        borderW = 4;
+      }
+    }
+
+    drawRoundedRect(bx, by, btnW, btnH, 20, bgColor, border, borderW);
+
+    // Emoji
+    ctx.font = '52px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(opt.e, bx + btnW / 2, by + 50);
+    ctx.textBaseline = 'alphabetic';
+
+    // Woord
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px "Comic Sans MS", cursive';
+    ctx.textAlign = 'center';
+    ctx.fillText(opt.w, bx + btnW / 2, by + btnH + 22);
+
+    if (!feedback) {
+      registerButton(bx, by, btnW, btnH, 'opt' + i);
+    }
+  });
+}
+
+function drawFeedbackBanner() {
+  if (!feedback) return;
+  const alpha = Math.min(1, feedback.timer / 20);
+  const col = feedback.correct ? 'rgba(80,200,80,' + alpha + ')' : 'rgba(200,80,80,' + alpha + ')';
+  drawRoundedRect(40, 360, 310, 65, 15, col, 'rgba(255,255,255,0.5)', 2);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px "Comic Sans MS", cursive';
+  ctx.textAlign = 'center';
+  ctx.fillText(feedback.correct ? '🎉 Super goed!' : '😢 Probeer opnieuw!', 195, 401);
+}
+
+function drawStars() {
+  stars.forEach(s => {
+    ctx.globalAlpha = s.life;
+    ctx.fillStyle = s.color;
+    ctx.font = s.size + 'px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⭐', s.x, s.y);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawGameOver() {
+  clearButtons();
+  drawBackground();
+
+  ctx.fillStyle = '#FFE66D';
+  ctx.font = 'bold 48px "Comic Sans MS", cursive';
+  ctx.textAlign = 'center';
+  ctx.fillText('🏆 Klaar!', 195, 200);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '28px "Comic Sans MS", cursive';
+  ctx.fillText('Jouw score:', 195, 280);
+
+  ctx.fillStyle = '#4ECDC4';
+  ctx.font = 'bold 72px "Comic Sans MS", cursive';
+  ctx.fillText(score + ' / ' + totalQuestions, 195, 380);
+
+  const stars3 = Math.round((score / totalQuestions) * 3);
+  ctx.font = '56px serif';
+  const starStr = '⭐'.repeat(stars3) + '☆'.repeat(3 - stars3);
+  ctx.fillText(starStr, 195, 460);
+
+  const msg = score === totalQuestions ? 'Fantastisch! Alles goed!' :
+              score >= totalQuestions * 0.7 ? 'Heel goed gedaan!' :
+              'Goed geprobeerd!';
+  ctx.fillStyle = '#FFE66D';
+  ctx.font = '22px "Comic Sans MS", cursive';
+  ctx.fillText(msg, 195, 520);
+
+  // Restart knop
+  drawRoundedRect(95, 570, 200, 70, 20, '#FF6B6B', '#FF8B94', 3);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px "Comic Sans MS", cursive';
+  ctx.fillText('Nog een keer! 🔄', 195, 612);
+  registerButton(95, 570, 200, 70, 'restart');
+}
+
+// ---- GAME LOOP ----
+let lastTime = 0;
+function loop(ts) {
+  requestAnimationFrame(loop);
+  const dt = ts - lastTime;
+  lastTime = ts;
+
+  if (gameOver) {
+    drawGameOver();
+    return;
+  }
+
+  drawBackground();
+  drawHeader();
+
+  const round = shuffledRounds[currentRound];
+  drawLetterCard(round.letter);
+  drawOptions(round);
+  drawFeedbackBanner();
+  drawStars();
+
+  // Update particles
+  for (let i = stars.length - 1; i >= 0; i--) {
+    const s = stars[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.vy += 0.15;
+    s.life -= 0.025;
+    if (s.life <= 0) stars.splice(i, 1);
+  }
+
+  // Feedback timer
+  if (feedback) {
+    feedback.timer--;
+    if (feedback.timer <= 0) {
+      if (feedback.correct) {
+        currentRound++;
+        if (currentRound >= totalQuestions) {
+          gameOver = true;
+          playWin();
+        }
+      }
+      feedback = null;
+    }
+  }
+}
+
+initGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
