@@ -100,6 +100,82 @@ let dead=false, canDrop=true, mouseX=W/2, cur=0, nxt=0;
 let mergingSet=new Set(), combo=0, comboTmr=null;
 let shakeF=0, shakeA=0, T=0;
 
+// ── Audio ────────────────────────────────────────────────────────────────────
+let _ac=null, _ambientOn=false;
+function getAC(){ if(!_ac) _ac=new(window.AudioContext||window.webkitAudioContext)(); return _ac; }
+
+function startAmbient(){
+    if(_ambientOn) return; _ambientOn=true;
+    const ac=getAC();
+    // Sub drone: A1 + E2
+    [[55,.038],[82.4,.022]].forEach(([f,g])=>{
+        const o=ac.createOscillator(), gn=ac.createGain();
+        o.type='sine'; o.frequency.value=f; gn.gain.value=g;
+        o.connect(gn); gn.connect(ac.destination); o.start();
+    });
+    // Soft pad: detuned cluster around A3
+    const padG=ac.createGain(), filt=ac.createBiquadFilter();
+    filt.type='lowpass'; filt.frequency.value=700; filt.Q.value=1.2;
+    padG.gain.value=0.014; padG.connect(filt); filt.connect(ac.destination);
+    [219.8,220,220.5].forEach(f=>{ const o=ac.createOscillator(); o.type='sine'; o.frequency.value=f; o.connect(padG); o.start(); });
+    // LFO on filter cutoff
+    const lfo=ac.createOscillator(), lfoG=ac.createGain();
+    lfo.frequency.value=0.06; lfoG.gain.value=280;
+    lfo.connect(lfoG); lfoG.connect(filt.frequency); lfo.start();
+}
+
+function playDrop(){
+    try{
+        const ac=getAC(), o=ac.createOscillator(), g=ac.createGain();
+        o.type='sine';
+        o.frequency.setValueAtTime(180,ac.currentTime);
+        o.frequency.exponentialRampToValueAtTime(70,ac.currentTime+0.14);
+        g.gain.setValueAtTime(0.16,ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.2);
+        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+0.22);
+    }catch(e){}
+}
+
+const MERGE_FREQS=[130.8,164.8,196,220,261.6,329.6,392,440,523.2,659.2,784];
+function playMerge(lvl){
+    try{
+        const ac=getAC(), freq=MERGE_FREQS[Math.min(lvl,MERGE_FREQS.length-1)];
+        const dur=0.18+lvl*0.045;
+        const o=ac.createOscillator(), g=ac.createGain();
+        o.type=lvl>=5?'triangle':'sine'; o.frequency.value=freq;
+        g.gain.setValueAtTime(0.28+lvl*0.015,ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur+0.05);
+        if(lvl>=5){
+            const o2=ac.createOscillator(), g2=ac.createGain();
+            o2.type='sine'; o2.frequency.value=freq*1.5;
+            g2.gain.setValueAtTime(0.1,ac.currentTime);
+            g2.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur*0.65);
+            o2.connect(g2); g2.connect(ac.destination); o2.start(); o2.stop(ac.currentTime+dur);
+        }
+        if(lvl===10){
+            const bass=ac.createOscillator(), bg=ac.createGain();
+            bass.type='sawtooth'; bass.frequency.value=30;
+            bg.gain.setValueAtTime(0.22,ac.currentTime);
+            bg.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+1.4);
+            bass.connect(bg); bg.connect(ac.destination); bass.start(); bass.stop(ac.currentTime+1.5);
+        }
+    }catch(e){}
+}
+
+function playCombo(n){
+    try{
+        const ac=getAC();
+        const freqs=[523.2,659.2,784,1046.4];
+        const freq=freqs[Math.min(n-2,freqs.length-1)];
+        const o=ac.createOscillator(), g=ac.createGain();
+        o.type='sine'; o.frequency.value=freq;
+        g.gain.setValueAtTime(0.2,ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.22);
+        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+0.26);
+    }catch(e){}
+}
+
 document.getElementById('hsEl').textContent='BEST: '+hs;
 
 // ── Background ───────────────────────────────────────────────────────────────
@@ -431,6 +507,7 @@ function doCombo(){
     clearTimeout(comboTmr);
     comboTmr=setTimeout(()=>{ combo=0; document.getElementById('comboEl').textContent=''; },COMBO_MS);
     document.getElementById('comboEl').textContent=combo>=2?`COMBO \xd7${combo}`:'';
+    if(combo>=2) playCombo(combo);
 }
 
 // ── Physics ──────────────────────────────────────────────────────────────────
@@ -462,6 +539,7 @@ function onCol(ev){
             const gained=Math.round(SCORES[nl]*(combo>=2?1+combo*.25:1));
             score+=gained;
             document.getElementById('scoreEl').textContent=score;
+            playMerge(nl);
             doCombo();
             const nova=nl>=8;
             spawnParticles(mx,my,nl,nova);
@@ -501,6 +579,7 @@ function blackHoleGravity(){
 // ── Drop & game over ─────────────────────────────────────────────────────────
 function drop(){
     if(!canDrop||dead) return;
+    startAmbient(); playDrop();
     addBall(clampX(mouseX,cur),AIM_Y,cur,false);
     cur=nxt; nxt=rndLvl(); drawPreview();
     canDrop=false;
@@ -579,8 +658,23 @@ function render(){
     // aim
     if(canDrop&&!dead){
         const ax=clampX(mouseX,cur), r=COSMOS[cur].r;
-        ctx.save(); ctx.strokeStyle='rgba(100,155,255,.1)'; ctx.lineWidth=1; ctx.setLineDash([3,9]);
-        ctx.beginPath(); ctx.moveTo(ax,AIM_Y+r); ctx.lineTo(ax,H-WALL); ctx.stroke(); ctx.restore();
+        ctx.save();
+        // Animated dotted line — dashes flow downward
+        ctx.strokeStyle='rgba(140,195,255,.38)'; ctx.lineWidth=1.5;
+        ctx.setLineDash([5,13]);
+        ctx.lineDashOffset=-(T*55)%18;
+        ctx.beginPath(); ctx.moveTo(ax,AIM_Y+r+2); ctx.lineTo(ax,H-WALL-2); ctx.stroke();
+        ctx.setLineDash([]); ctx.lineDashOffset=0;
+        // Elliptical landing shadow on floor
+        const pulse=0.55+0.45*Math.sin(T*3.5);
+        ctx.strokeStyle=`rgba(140,200,255,${0.28*pulse})`; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.ellipse(ax,H-WALL-3,r*0.65,r*0.16,0,0,Math.PI*2); ctx.stroke();
+        // Soft glow at landing point
+        const lg=ctx.createRadialGradient(ax,H-WALL-3,0,ax,H-WALL-3,r*0.9);
+        lg.addColorStop(0,`rgba(130,190,255,${0.28*pulse})`);
+        lg.addColorStop(1,'rgba(130,190,255,0)');
+        ctx.fillStyle=lg; ctx.beginPath(); ctx.arc(ax,H-WALL-3,r*0.9,0,Math.PI*2); ctx.fill();
+        ctx.restore();
         drawBody(ctx,ax,AIM_Y,cur,0,0,0);
     }
     // black hole warp visual
