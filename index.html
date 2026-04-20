@@ -59,9 +59,11 @@ body {
             <div id="nextName"></div>
         </div>
         <div id="goPanel">
-            <h2>GAME OVER</h2>
+            <h2 id="goTitle">GAME OVER</h2>
+            <div id="goSub" style="font-size:11px;color:#7799bb;margin:4px 0 8px;min-height:16px;"></div>
             <div id="goScore">0</div>
-            <button id="restartBtn" onclick="restartGame()">Opnieuw</button>
+            <button id="restartBtn" onclick="restartGame()">Opnieuw proberen</button>
+            <button id="nextLvlBtn" onclick="goNextLevel()" style="display:none;margin-top:6px;width:100%;padding:8px;background:linear-gradient(135deg,#1a6a1a,#2a9a2a);color:#aaffaa;border:1px solid #2a9a2a;border-radius:6px;font-size:11px;cursor:pointer;letter-spacing:1px;">LEVEL 2 →</button>
         </div>
     </div>
 </div>
@@ -96,85 +98,19 @@ const {Engine,Bodies,Body,World,Events}=Matter;
 let engine,world,canvas,ctx,bgCanvas,bgCtx;
 let balls=[],particles=[],texts=[],rings=[],dust=[];
 let score=0, hs=parseInt(localStorage.getItem('cosmicHS')||'0');
-let dead=false, canDrop=true, mouseX=W/2, cur=0, nxt=0;
+let dead=false, canDrop=true, mouseX=W/2, mouseY=H/2, aimAngle=Math.PI/2, cur=0, nxt=0;
+
+// ── Levels ────────────────────────────────────────────────────────────────────────────
+const LEVEL_CFG=[
+  { id:1, scoreTarget:500,  maxSpawn:4, wind:false },
+  { id:2, scoreTarget:1500, maxSpawn:4, wind:true  },
+];
+let currentLevel=1;
+
+// ── Wind ────────────────────────────────────────────────────────────────────────────
+let windDir=1, windForce=0.000018, windTimer=0;
 let mergingSet=new Set(), combo=0, comboTmr=null;
 let shakeF=0, shakeA=0, T=0;
-
-// ── Audio ────────────────────────────────────────────────────────────────────
-let _ac=null, _ambientOn=false;
-function getAC(){ if(!_ac) _ac=new(window.AudioContext||window.webkitAudioContext)(); return _ac; }
-
-function startAmbient(){
-    if(_ambientOn) return; _ambientOn=true;
-    const ac=getAC();
-    // Sub drone: A1 + E2
-    [[55,.038],[82.4,.022]].forEach(([f,g])=>{
-        const o=ac.createOscillator(), gn=ac.createGain();
-        o.type='sine'; o.frequency.value=f; gn.gain.value=g;
-        o.connect(gn); gn.connect(ac.destination); o.start();
-    });
-    // Soft pad: detuned cluster around A3
-    const padG=ac.createGain(), filt=ac.createBiquadFilter();
-    filt.type='lowpass'; filt.frequency.value=700; filt.Q.value=1.2;
-    padG.gain.value=0.014; padG.connect(filt); filt.connect(ac.destination);
-    [219.8,220,220.5].forEach(f=>{ const o=ac.createOscillator(); o.type='sine'; o.frequency.value=f; o.connect(padG); o.start(); });
-    // LFO on filter cutoff
-    const lfo=ac.createOscillator(), lfoG=ac.createGain();
-    lfo.frequency.value=0.06; lfoG.gain.value=280;
-    lfo.connect(lfoG); lfoG.connect(filt.frequency); lfo.start();
-}
-
-function playDrop(){
-    try{
-        const ac=getAC(), o=ac.createOscillator(), g=ac.createGain();
-        o.type='sine';
-        o.frequency.setValueAtTime(180,ac.currentTime);
-        o.frequency.exponentialRampToValueAtTime(70,ac.currentTime+0.14);
-        g.gain.setValueAtTime(0.16,ac.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.2);
-        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+0.22);
-    }catch(e){}
-}
-
-const MERGE_FREQS=[130.8,164.8,196,220,261.6,329.6,392,440,523.2,659.2,784];
-function playMerge(lvl){
-    try{
-        const ac=getAC(), freq=MERGE_FREQS[Math.min(lvl,MERGE_FREQS.length-1)];
-        const dur=0.18+lvl*0.045;
-        const o=ac.createOscillator(), g=ac.createGain();
-        o.type=lvl>=5?'triangle':'sine'; o.frequency.value=freq;
-        g.gain.setValueAtTime(0.28+lvl*0.015,ac.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
-        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur+0.05);
-        if(lvl>=5){
-            const o2=ac.createOscillator(), g2=ac.createGain();
-            o2.type='sine'; o2.frequency.value=freq*1.5;
-            g2.gain.setValueAtTime(0.1,ac.currentTime);
-            g2.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur*0.65);
-            o2.connect(g2); g2.connect(ac.destination); o2.start(); o2.stop(ac.currentTime+dur);
-        }
-        if(lvl===10){
-            const bass=ac.createOscillator(), bg=ac.createGain();
-            bass.type='sawtooth'; bass.frequency.value=30;
-            bg.gain.setValueAtTime(0.22,ac.currentTime);
-            bg.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+1.4);
-            bass.connect(bg); bg.connect(ac.destination); bass.start(); bass.stop(ac.currentTime+1.5);
-        }
-    }catch(e){}
-}
-
-function playCombo(n){
-    try{
-        const ac=getAC();
-        const freqs=[523.2,659.2,784,1046.4];
-        const freq=freqs[Math.min(n-2,freqs.length-1)];
-        const o=ac.createOscillator(), g=ac.createGain();
-        o.type='sine'; o.frequency.value=freq;
-        g.gain.setValueAtTime(0.2,ac.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.22);
-        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+0.26);
-    }catch(e){}
-}
 
 document.getElementById('hsEl').textContent='BEST: '+hs;
 
@@ -484,7 +420,7 @@ function drawBody(c,x,y,lvl,ang,vx,vy){
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function clampX(x,lvl){ const r=COSMOS[lvl].r; return Math.max(WALL+r+2,Math.min(W-WALL-r-2,x)); }
-function rndLvl(){ return Math.floor(Math.random()*(MAX_SPAWN+1)); }
+function rndLvl(){ const mx=LEVEL_CFG[currentLevel-1].maxSpawn; return Math.floor(Math.random()*(mx+1)); }
 
 // ── Effects ──────────────────────────────────────────────────────────────────
 function spawnParticles(x,y,lvl,nova){
@@ -507,7 +443,6 @@ function doCombo(){
     clearTimeout(comboTmr);
     comboTmr=setTimeout(()=>{ combo=0; document.getElementById('comboEl').textContent=''; },COMBO_MS);
     document.getElementById('comboEl').textContent=combo>=2?`COMBO \xd7${combo}`:'';
-    if(combo>=2) playCombo(combo);
 }
 
 // ── Physics ──────────────────────────────────────────────────────────────────
@@ -539,7 +474,6 @@ function onCol(ev){
             const gained=Math.round(SCORES[nl]*(combo>=2?1+combo*.25:1));
             score+=gained;
             document.getElementById('scoreEl').textContent=score;
-            playMerge(nl);
             doCombo();
             const nova=nl>=8;
             spawnParticles(mx,my,nl,nova);
@@ -579,8 +513,7 @@ function blackHoleGravity(){
 // ── Drop & game over ─────────────────────────────────────────────────────────
 function drop(){
     if(!canDrop||dead) return;
-    startAmbient(); playDrop();
-    addBall(clampX(mouseX,cur),AIM_Y,cur,false);
+    const spd=16; addBall(W/2,AIM_Y,cur,false); const nb=balls[balls.length-1]; Body.setVelocity(nb,{x:Math.cos(aimAngle)*spd,y:0});
     cur=nxt; nxt=rndLvl(); drawPreview();
     canDrop=false;
     setTimeout(()=>{ if(!dead) canDrop=true; },DROP_MS);
@@ -592,14 +525,45 @@ function checkDead(){
         if(b.position.y-COSMOS[b.bl].r<DANGER_Y&&Math.hypot(b.velocity.x,b.velocity.y)<1.15){
             dead=true; canDrop=false;
             if(score>hs){ hs=score; localStorage.setItem('cosmicHS',hs); document.getElementById('hsEl').textContent='BEST: '+hs; }
+            const cfg=LEVEL_CFG[currentLevel-1];
+            const passed=score>=cfg.scoreTarget;
+            const hasNext=currentLevel<LEVEL_CFG.length;
             document.getElementById('goScore').textContent=score;
+            if(passed&&hasNext){
+                document.getElementById('goTitle').textContent='LEVEL '+currentLevel+' VOLTOOID!';
+                document.getElementById('goSub').textContent='Score: '+score+' — door naar level '+(currentLevel+1)+'!';
+                document.getElementById('nextLvlBtn').style.display='block';
+                document.getElementById('restartBtn').textContent='Opnieuw (lvl '+currentLevel+')';
+            } else {
+                const needed=cfg.scoreTarget-score;
+                document.getElementById('goTitle').textContent='GAME OVER';
+                document.getElementById('goSub').textContent='Doel: '+cfg.scoreTarget+' — nog '+needed+' tekort';
+                document.getElementById('nextLvlBtn').style.display='none';
+                document.getElementById('restartBtn').textContent='Opnieuw proberen';
+            }
             document.getElementById('goPanel').style.display='block';
             return;
         }
     }
 }
 
+function goNextLevel(){
+    currentLevel++;
+    windDir=1; windTimer=0;
+    document.getElementById('goPanel').style.display='none';
+    document.getElementById('nextLvlBtn').style.display='none';
+    World.clear(world); Engine.clear(engine);
+    balls=[]; particles=[]; texts=[]; rings=[];
+    score=0; dead=false; canDrop=true; combo=0; shakeF=0;
+    mergingSet.clear(); clearTimeout(comboTmr);
+    document.getElementById('scoreEl').textContent='0';
+    document.getElementById('comboEl').textContent='';
+    document.getElementById('title').textContent='COSMIC MERGE — LEVEL '+currentLevel;
+    setupEngine(); cur=rndLvl(); nxt=rndLvl(); drawPreview();
+}
+
 function restartGame(){
+    windDir=1; windTimer=0;
     World.clear(world); Engine.clear(engine);
     balls=[]; particles=[]; texts=[]; rings=[];
     score=0; dead=false; canDrop=true; combo=0; shakeF=0;
@@ -648,6 +612,13 @@ function render(){
     // danger line
     ctx.save(); ctx.strokeStyle='rgba(248,81,73,.28)'; ctx.lineWidth=1; ctx.setLineDash([5,7]);
     ctx.beginPath(); ctx.moveTo(WALL,DANGER_Y); ctx.lineTo(W-WALL,DANGER_Y); ctx.stroke(); ctx.restore();
+    if(LEVEL_CFG[currentLevel-1].wind){
+        const pulse=0.6+0.4*Math.sin(T*2);
+        ctx.save(); ctx.globalAlpha=0.55*pulse;
+        ctx.font='bold 12px Arial'; ctx.fillStyle='#88ccff'; ctx.textAlign='center';
+        ctx.fillText(windDir>0?'WIND →  →  →':'WIND ←  ←  ←', W/2, DANGER_Y-8);
+        ctx.restore();
+    }
     // rings
     for(let i=rings.length-1;i>=0;i--){
         const rg=rings[i]; rg.r+=(rg.maxR-rg.r)*.15; rg.a-=.042;
@@ -657,25 +628,31 @@ function render(){
     }
     // aim
     if(canDrop&&!dead){
-        const ax=clampX(mouseX,cur), r=COSMOS[cur].r;
+        const r=COSMOS[cur].r;
+        const sx=W/2, sy=AIM_Y;
+        // bouncing dotted aim line
         ctx.save();
-        // Animated dotted line — dashes flow downward
-        ctx.strokeStyle='rgba(140,195,255,.38)'; ctx.lineWidth=1.5;
-        ctx.setLineDash([5,13]);
-        ctx.lineDashOffset=-(T*55)%18;
-        ctx.beginPath(); ctx.moveTo(ax,AIM_Y+r+2); ctx.lineTo(ax,H-WALL-2); ctx.stroke();
+        ctx.strokeStyle='rgba(140,185,255,.25)'; ctx.lineWidth=1.2;
+        ctx.setLineDash([5,14]); ctx.lineDashOffset=-(T*22)%19;
+        ctx.beginPath(); ctx.moveTo(sx, sy);
+        let lx=sx, ly=sy, ldx=Math.cos(aimAngle), ldy=Math.sin(aimAngle);
+        for(let bounce=0;bounce<3;bounce++){
+            const tRight=(W-WALL-r-lx)/ldx;
+            const tLeft=(WALL+r-lx)/ldx;
+            const tBottom=(H-WALL-r-ly)/ldy;
+            let t=Infinity, hitSide=false;
+            if(ldx>0 && tRight>0.5 && tRight<t){ t=tRight; hitSide=true; }
+            if(ldx<0 && tLeft>0.5  && tLeft<t){ t=tLeft;  hitSide=true; }
+            if(ldy>0 && tBottom>0.5 && tBottom<t){ t=tBottom; hitSide=false; }
+            if(!isFinite(t)) break;
+            lx+=ldx*t; ly+=ldy*t;
+            ctx.lineTo(lx, ly);
+            if(hitSide){ ldx=-ldx; } else { break; }
+        }
+        ctx.stroke();
         ctx.setLineDash([]); ctx.lineDashOffset=0;
-        // Elliptical landing shadow on floor
-        const pulse=0.55+0.45*Math.sin(T*3.5);
-        ctx.strokeStyle=`rgba(140,200,255,${0.28*pulse})`; ctx.lineWidth=1.5;
-        ctx.beginPath(); ctx.ellipse(ax,H-WALL-3,r*0.65,r*0.16,0,0,Math.PI*2); ctx.stroke();
-        // Soft glow at landing point
-        const lg=ctx.createRadialGradient(ax,H-WALL-3,0,ax,H-WALL-3,r*0.9);
-        lg.addColorStop(0,`rgba(130,190,255,${0.28*pulse})`);
-        lg.addColorStop(1,'rgba(130,190,255,0)');
-        ctx.fillStyle=lg; ctx.beginPath(); ctx.arc(ax,H-WALL-3,r*0.9,0,Math.PI*2); ctx.fill();
         ctx.restore();
-        drawBody(ctx,ax,AIM_Y,cur,0,0,0);
+        drawBody(ctx,sx,sy,cur,0,0,0);
     }
     // black hole warp visual
     for(const bh of balls){
@@ -726,8 +703,14 @@ function render(){
 // ── Loop ─────────────────────────────────────────────────────────────────────
 function loop(){
     T+=.016;
-    Engine.update(engine,1000/60);
+    Engine.update(engine,1000/60/2);
+    Engine.update(engine,1000/60/2);
     blackHoleGravity();
+    if(LEVEL_CFG[currentLevel-1].wind&&!dead){
+        windTimer++;
+        if(windTimer>600){ windDir*=-1; windTimer=0; }
+        for(const b of balls) Body.applyForce(b,b.position,{x:windForce*windDir*b.mass,y:0});
+    }
     if(!dead) checkDead();
     render();
     if(Math.round(T*60)%6===0) drawPreview();
@@ -738,9 +721,20 @@ function loop(){
 canvas=document.getElementById('gameCanvas');
 canvas.width=W; canvas.height=H;
 ctx=canvas.getContext('2d');
-canvas.addEventListener('mousemove',e=>{ mouseX=e.clientX-canvas.getBoundingClientRect().left; });
+function updateAim(cx,cy){
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=W/rect.width, scaleY=H/rect.height;
+    mouseX=cx*scaleX; mouseY=cy*scaleY;
+    const dx=mouseX-W/2, dy=mouseY-AIM_Y;
+    let a=Math.atan2(dy,dx);
+    // clamp to downward only (20deg to 160deg from horizontal)
+    const MIN=20*Math.PI/180, MAX=160*Math.PI/180;
+    a=Math.max(MIN,Math.min(MAX,a));
+    aimAngle=a;
+}
+canvas.addEventListener('mousemove',e=>{ const r=canvas.getBoundingClientRect(); updateAim(e.clientX-r.left,e.clientY-r.top); });
 canvas.addEventListener('click',drop);
-canvas.addEventListener('touchmove',e=>{ e.preventDefault(); mouseX=e.touches[0].clientX-canvas.getBoundingClientRect().left; },{passive:false});
+canvas.addEventListener('touchmove',e=>{ e.preventDefault(); const r=canvas.getBoundingClientRect(); updateAim(e.touches[0].clientX-r.left,e.touches[0].clientY-r.top); },{passive:false});
 canvas.addEventListener('touchend',e=>{ e.preventDefault(); drop(); },{passive:false});
 buildBg(); initDust(); setupEngine();
 cur=rndLvl(); nxt=rndLvl(); drawPreview();
