@@ -8,15 +8,9 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
     background:#000;
-    width:100vw; height:100vh; overflow:hidden;
-    font-family:Arial,sans-serif; color:#fff;
-    user-select:none;
-    display:flex; align-items:flex-start; justify-content:center;
-}
-#game-root {
-    display:flex; flex-direction:column; align-items:center;
-    transform-origin:top center;
-    flex-shrink:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; font-family:Arial,sans-serif; color:#fff;
+    user-select:none; overflow:hidden;
 }
 #title {
     font-size:17px; letter-spacing:5px; color:#7788aa; margin-bottom:12px;
@@ -33,9 +27,6 @@ body {
     border-radius:10px; padding:10px; text-align:center; margin-bottom:10px;
 }
 #nextName { font-size:9px; color:#556; margin-top:4px; text-transform:uppercase; letter-spacing:1px; }
-#levelInfo { background:rgba(8,12,28,0.9); border:1px solid #1a2540; border-radius:10px; padding:10px; text-align:center; margin-bottom:10px; }
-#levelNum { font-size:24px; font-weight:bold; color:#b8ccff; text-shadow:0 0 12px rgba(100,150,255,0.4); }
-#levelInfoText { font-size:8px; color:#6677aa; margin-top:5px; line-height:1.6; }
 #previewCanvas { display:block; margin:6px auto 0; }
 #goPanel {
     display:none; background:rgba(4,6,18,0.97); border:1px solid #f85149;
@@ -54,7 +45,6 @@ body {
 </style>
 </head>
 <body>
-<div id="game-root">
 <div id="title">&#10022; COSMIC MERGE &#10022;</div>
 <div id="layout">
     <canvas id="gameCanvas"></canvas>
@@ -68,21 +58,15 @@ body {
             <canvas id="previewCanvas" width="70" height="70"></canvas>
             <div id="nextName"></div>
         </div>
-        <div id="levelInfo">
-            <div class="lbl">Level</div>
-            <div id="levelNum">1</div>
-            <div id="levelInfoText"></div>
-        </div>
         <div id="goPanel">
             <h2 id="goTitle">GAME OVER</h2>
             <div id="goSub" style="font-size:11px;color:#7799bb;margin:4px 0 8px;min-height:16px;"></div>
             <div id="goScore">0</div>
             <button id="restartBtn" onclick="restartGame()">Opnieuw proberen</button>
-
+            <button id="nextLvlBtn" onclick="goNextLevel()" style="display:none;margin-top:6px;width:100%;padding:8px;background:linear-gradient(135deg,#1a6a1a,#2a9a2a);color:#aaffaa;border:1px solid #2a9a2a;border-radius:6px;font-size:11px;cursor:pointer;letter-spacing:1px;">LEVEL 2 →</button>
         </div>
     </div>
 </div>
-</div><!-- /game-root -->
 <div id="tip">klik om te droppen &bull; zelfde lichaam = merge</div>
 
 <script>/*!
@@ -118,14 +102,10 @@ let dead=false, canDrop=true, mouseX=W/2, mouseY=H/2, aimAngle=Math.PI/2, cur=0,
 
 // ── Levels ────────────────────────────────────────────────────────────────────────────
 const LEVEL_CFG=[
-  { id:1, maxSpawn:3, gravityY:2,   wind:false, windForce:0,        gravityWell:false, scoreThreshold:600,    info:['Basis game'] },
-  { id:2, maxSpawn:4, gravityY:2,   wind:true,  windForce:0.000015, gravityWell:false, scoreThreshold:1800,   info:['Wind kracht: 15','Richting wisselt elke 10s'] },
-  { id:3, maxSpawn:4, gravityY:2,   wind:false, windForce:0,        gravityWell:true,  scoreThreshold:4000,   info:['Zwaartekrachtput','Trekt naar het midden'] },
-  { id:4, maxSpawn:5, gravityY:3.5, wind:false, windForce:0,        gravityWell:false, scoreThreshold:8500,   info:['Zware zwaartekracht','Grotere planeten spawnen'] },
-  { id:5, maxSpawn:5, gravityY:3.5, wind:true,  windForce:0.000022, gravityWell:true,  scoreThreshold:9999999,info:['Chaos!','Wind + Zwaartekrachtput'] },
+  { id:1, scoreTarget:500,  maxSpawn:4, wind:false },
+  { id:2, scoreTarget:1500, maxSpawn:4, wind:true  },
 ];
 let currentLevel=1;
-let _levelAdvancing=false;
 
 // ── Wind ────────────────────────────────────────────────────────────────────────────
 let windDir=1, windForce=0.000018, windTimer=0;
@@ -511,8 +491,7 @@ function doCombo(){
 
 // ── Physics ──────────────────────────────────────────────────────────────────
 function setupEngine(){
-    const _gy=LEVEL_CFG[currentLevel-1].gravityY;
-    engine=Engine.create({gravity:{x:0,y:_gy}}); world=engine.world;
+    engine=Engine.create({gravity:{x:0,y:2}}); world=engine.world;
     const o={isStatic:true,restitution:.15,friction:.9,label:'wall'};
     World.add(world,[
         Bodies.rectangle(W/2,H+WALL/2,W,WALL,o),
@@ -561,19 +540,6 @@ function addBall(x,y,lvl,merged){
 }
 function rmBall(b){ World.remove(world,b); balls=balls.filter(x=>x!==b); }
 
-function gravityWellForce(){
-    if(!LEVEL_CFG[currentLevel-1].gravityWell) return;
-    const wx=W/2, wy=H*0.60;
-    const strength=0.0000115;
-    for(const b of balls){
-        const dx=wx-b.position.x, dy=wy-b.position.y;
-        const dist=Math.sqrt(dx*dx+dy*dy);
-        if(dist<12) continue;
-        const force=strength*b.mass/dist;
-        Body.applyForce(b,b.position,{x:dx/dist*force,y:dy/dist*force});
-    }
-}
-
 function blackHoleGravity(){
     for(const bh of balls){
         if(bh.bl!==10) continue;
@@ -590,12 +556,10 @@ function blackHoleGravity(){
 }
 
 // ── Drop & game over ─────────────────────────────────────────────────────────
-function drop(vx,vy){
+function drop(){
     if(!canDrop||dead) return;
     startMusic(); playDrop();
-    const spd=16;
-    if(vx===undefined){ vx=Math.cos(aimAngle)*spd; vy=0; }
-    addBall(W/2,AIM_Y,cur,false); const nb=balls[balls.length-1]; Body.setVelocity(nb,{x:vx,y:vy});
+    const spd=16; addBall(W/2,AIM_Y,cur,false); const nb=balls[balls.length-1]; Body.setVelocity(nb,{x:Math.cos(aimAngle)*spd,y:0});
     cur=nxt; nxt=rndLvl(); drawPreview();
     canDrop=false;
     setTimeout(()=>{ if(!dead) canDrop=true; },DROP_MS);
@@ -607,39 +571,46 @@ function checkDead(){
         if(b.position.y-COSMOS[b.bl].r<DANGER_Y&&Math.hypot(b.velocity.x,b.velocity.y)<1.15){
             dead=true; canDrop=false;
             if(score>hs){ hs=score; localStorage.setItem('cosmicHS',hs); document.getElementById('hsEl').textContent='BEST: '+hs; }
-            if(currentLevel<LEVEL_CFG.length){
-                // advance to next level — score carries over
+            const cfg=LEVEL_CFG[currentLevel-1];
+            const passed=score>=cfg.scoreTarget;
+            const hasNext=currentLevel<LEVEL_CFG.length;
+            document.getElementById('goScore').textContent=score;
+            if(passed&&hasNext){
+                document.getElementById('goTitle').textContent='LEVEL '+currentLevel+' VOLTOOID!';
+                document.getElementById('goSub').textContent='Score: '+score+' — door naar level '+(currentLevel+1)+'!';
                 playLevelUp();
-                texts.push({txt:'LEVEL '+(currentLevel+1)+'!',x:W/2,y:H/2-20,vy:-1.0,a:1.8,big:true});
-                setTimeout(()=>{ advanceLevel(); }, 1400);
+                document.getElementById('nextLvlBtn').style.display='block';
+                document.getElementById('restartBtn').textContent='Opnieuw (lvl '+currentLevel+')';
             } else {
-                // final level — real game over
-                document.getElementById('goScore').textContent=score;
+                const needed=cfg.scoreTarget-score;
                 document.getElementById('goTitle').textContent='GAME OVER';
-                document.getElementById('goSub').textContent='Totale score: '+score;
-                document.getElementById('restartBtn').textContent='Opnieuw spelen';
-                playGameOver();
-                document.getElementById('goPanel').style.display='block';
+                document.getElementById('goSub').textContent='Doel: '+cfg.scoreTarget+' — nog '+needed+' tekort';
+                document.getElementById('nextLvlBtn').style.display='none';
+                document.getElementById('restartBtn').textContent='Opnieuw proberen';
             }
+            playGameOver();
+            document.getElementById('goPanel').style.display='block';
             return;
         }
     }
 }
 
-function advanceLevel(){
+function goNextLevel(){
     currentLevel++;
-    windDir=1; windTimer=0; _levelAdvancing=false;
+    windDir=1; windTimer=0;
+    document.getElementById('goPanel').style.display='none';
+    document.getElementById('nextLvlBtn').style.display='none';
     World.clear(world); Engine.clear(engine);
     balls=[]; particles=[]; texts=[]; rings=[];
-    dead=false; canDrop=true; combo=0; shakeF=0;
+    score=0; dead=false; canDrop=true; combo=0; shakeF=0;
     mergingSet.clear(); clearTimeout(comboTmr);
+    document.getElementById('scoreEl').textContent='0';
     document.getElementById('comboEl').textContent='';
-    updateLevelUI();
+    document.getElementById('title').textContent='COSMIC MERGE — LEVEL '+currentLevel;
     setupEngine(); cur=rndLvl(); nxt=rndLvl(); drawPreview();
 }
 
 function restartGame(){
-    currentLevel=1; _levelAdvancing=false;
     windDir=1; windTimer=0;
     World.clear(world); Engine.clear(engine);
     balls=[]; particles=[]; texts=[]; rings=[];
@@ -648,15 +619,7 @@ function restartGame(){
     document.getElementById('scoreEl').textContent='0';
     document.getElementById('comboEl').textContent='';
     document.getElementById('goPanel').style.display='none';
-    updateLevelUI();
     setupEngine(); cur=rndLvl(); nxt=rndLvl(); drawPreview();
-}
-
-
-function updateLevelUI(){
-    const cfg=LEVEL_CFG[currentLevel-1];
-    document.getElementById('levelNum').textContent=currentLevel;
-    document.getElementById('levelInfoText').innerHTML=cfg.info.join('<br>');
 }
 
 // ── Preview ──────────────────────────────────────────────────────────────────
@@ -702,22 +665,6 @@ function render(){
         ctx.save(); ctx.globalAlpha=0.55*pulse;
         ctx.font='bold 12px Arial'; ctx.fillStyle='#88ccff'; ctx.textAlign='center';
         ctx.fillText(windDir>0?'WIND →  →  →':'WIND ←  ←  ←', W/2, DANGER_Y-8);
-        ctx.restore();
-    }
-    if(LEVEL_CFG[currentLevel-1].gravityWell){
-        const wx=W/2, wy=H*0.60;
-        const pr=22+4*Math.sin(T*1.8);
-        const wg=ctx.createRadialGradient(wx,wy,0,wx,wy,pr*2.2);
-        wg.addColorStop(0,'rgba(140,80,255,0.22)');
-        wg.addColorStop(0.5,'rgba(100,40,200,0.10)');
-        wg.addColorStop(1,'rgba(0,0,0,0)');
-        ctx.save(); ctx.globalAlpha=0.7;
-        ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx,wy,pr*2.2,0,Math.PI*2); ctx.fill();
-        // rotating ring
-        ctx.strokeStyle='rgba(160,80,255,0.30)'; ctx.lineWidth=1;
-        ctx.setLineDash([3,9]); ctx.lineDashOffset=-(T*30)%12;
-        ctx.beginPath(); ctx.arc(wx,wy,pr,0,Math.PI*2); ctx.stroke();
-        ctx.setLineDash([]);
         ctx.restore();
     }
     // rings
@@ -807,13 +754,10 @@ function loop(){
     Engine.update(engine,1000/60/2);
     Engine.update(engine,1000/60/2);
     blackHoleGravity();
-    gravityWellForce();
-    const _cfg=LEVEL_CFG[currentLevel-1];
-    if(_cfg.wind&&!dead){
+    if(LEVEL_CFG[currentLevel-1].wind&&!dead){
         windTimer++;
-        const windPeriod=currentLevel>=5?350:500;
-        if(windTimer>windPeriod){ windDir*=-1; windTimer=0; }
-        for(const b of balls) Body.applyForce(b,b.position,{x:_cfg.windForce*windDir*b.mass,y:0});
+        if(windTimer>600){ windDir*=-1; windTimer=0; }
+        for(const b of balls) Body.applyForce(b,b.position,{x:windForce*windDir*b.mass,y:0});
     }
     if(!dead) checkDead();
     render();
@@ -838,75 +782,11 @@ function updateAim(cx,cy){
 }
 canvas.addEventListener('mousemove',e=>{ const r=canvas.getBoundingClientRect(); updateAim(e.clientX-r.left,e.clientY-r.top); });
 canvas.addEventListener('click',drop);
-
-// ── Touch: flick to throw ─────────────────────────────────────────────────
-let _th=[]; // touch history [{x,y,t}]
-canvas.addEventListener('touchstart',e=>{
-    e.preventDefault();
-    _th=[];
-    const r=canvas.getBoundingClientRect();
-    const t=e.touches[0];
-    const cx=(t.clientX-r.left)*(W/r.width), cy=(t.clientY-r.top)*(H/r.height);
-    _th.push({x:cx,y:cy,t:Date.now()});
-    updateAim(t.clientX-r.left,t.clientY-r.top);
-},{passive:false});
-canvas.addEventListener('touchmove',e=>{
-    e.preventDefault();
-    const r=canvas.getBoundingClientRect();
-    const t=e.touches[0];
-    const cx=(t.clientX-r.left)*(W/r.width), cy=(t.clientY-r.top)*(H/r.height);
-    _th.push({x:cx,y:cy,t:Date.now()});
-    if(_th.length>6) _th.shift();
-    updateAim(t.clientX-r.left,t.clientY-r.top);
-},{passive:false});
-canvas.addEventListener('touchend',e=>{
-    e.preventDefault();
-    let vx,vy;
-    if(_th.length>=2){
-        // average velocity over last ~80ms of movement
-        const now=Date.now();
-        const recent=_th.filter(p=>now-p.t<80);
-        if(recent.length>=2){
-            const a=recent[0], b=recent[recent.length-1];
-            const dt=Math.max(b.t-a.t,8);
-            vx=(b.x-a.x)/dt*0.95; // px/ms → game-px per frame (~60fps)
-            vy=(b.y-a.y)/dt*0.95;
-        }
-    }
-    if(vx!==undefined){
-        // clamp speed between 6 and 22, no launching upward beyond slight arc
-        const spd=Math.sqrt(vx*vx+vy*vy);
-        const clamped=Math.max(6,Math.min(22,spd));
-        if(spd>0.5){ vx=vx/spd*clamped; vy=vy/spd*clamped; }
-        else { vx=Math.cos(aimAngle)*16; vy=0; }
-        vy=Math.max(vy,-6); // allow only slight upward arc
-        drop(vx,vy);
-    } else {
-        drop(); // tap with no swipe → use aim line
-    }
-},{passive:false});
-buildBg(); initDust(); setupEngine(); updateLevelUI();
+canvas.addEventListener('touchmove',e=>{ e.preventDefault(); const r=canvas.getBoundingClientRect(); updateAim(e.touches[0].clientX-r.left,e.touches[0].clientY-r.top); },{passive:false});
+canvas.addEventListener('touchend',e=>{ e.preventDefault(); drop(); },{passive:false});
+buildBg(); initDust(); setupEngine();
 cur=rndLvl(); nxt=rndLvl(); drawPreview();
 loop();
-
-var _natW=0,_natH=0;
-function fitGame(){
-    var el=document.getElementById('game-root');
-    // measure natural size once (before any scaling)
-    if(!_natW){
-        el.style.transform='none';
-        _natW=el.offsetWidth||524;
-        _natH=el.offsetHeight||666;
-    }
-    var scale=Math.min(window.innerWidth/_natW, window.innerHeight/_natH, 1);
-    el.style.transform='scale('+scale+')';
-    el.style.marginTop=Math.max(0,(window.innerHeight-_natH*scale)/2)+'px';
-    // shrink body so no phantom scroll space
-    document.body.style.height=((_natH*scale)+'px');
-}
-window.addEventListener('resize',fitGame);
-// wait one frame so canvas dimensions are committed to layout
-requestAnimationFrame(fitGame);
 </script>
 </body>
 </html>
