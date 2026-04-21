@@ -112,6 +112,49 @@ let windDir=1, windForce=0.000018, windTimer=0;
 let mergingSet=new Set(), combo=0, comboTmr=null;
 let shakeF=0, shakeA=0, T=0;
 
+// ── Audio System ──────────────────────────────────────────────────────────────
+let _ac=null, _musicStarted=false, _chordIdx=0, _arpStep=0, _padOscs=[];
+function getAC(){ if(!_ac) _ac=new(window.AudioContext||window.webkitAudioContext)(); return _ac; }
+const CHORD_PROG=[[220,261.6,329.6],[196,246.9,293.7],[174.6,220,261.6],[196,246.9,311.1]];
+const PENTA=[1,1.125,1.25,1.5,1.667,2];
+function makeImpulse(ac,dur,dec){ const b=ac.createBuffer(2,ac.sampleRate*dur,ac.sampleRate); for(let c=0;c<2;c++){ const d=b.getChannelData(c); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,dec); } return b; }
+function startMusic(){
+    if(_musicStarted) return; _musicStarted=true;
+    const ac=getAC();
+    const rv=ac.createConvolver(); rv.buffer=makeImpulse(ac,2.5,2.2);
+    const bus=ac.createGain(); bus.gain.value=0; bus.connect(rv); bus.connect(ac.destination); rv.connect(ac.destination);
+    bus.gain.linearRampToValueAtTime(0.55,ac.currentTime+4);
+    window._musicBus=bus;
+    // Sub drone
+    const dg=ac.createGain(); dg.gain.value=0.06; dg.connect(bus);
+    [54.5,55,55.5].forEach(function(f){ var o=ac.createOscillator(); o.type='sine'; o.frequency.value=f; o.connect(dg); o.start(); });
+    // Pad with filter sweep
+    const pf=ac.createBiquadFilter(); pf.type='lowpass'; pf.frequency.value=900; pf.Q.value=1.4; pf.connect(bus);
+    const pg=ac.createGain(); pg.gain.value=0.04; pg.connect(pf);
+    const sl=ac.createOscillator(),sg=ac.createGain(); sl.frequency.value=0.07; sg.gain.value=0.025; sl.connect(sg); sg.connect(pg.gain); sl.start();
+    const fl=ac.createOscillator(),fg=ac.createGain(); fl.frequency.value=0.04; fg.gain.value=320; fl.connect(fg); fg.connect(pf.frequency); fl.start();
+    _padOscs=[];
+    CHORD_PROG[0].forEach(function(f){ var o=ac.createOscillator(); o.type='triangle'; o.frequency.value=f; o.connect(pg); o.start(); _padOscs.push({osc:o}); });
+    // Shimmer
+    var shg=ac.createGain(); shg.gain.value=0.018; shg.connect(bus);
+    function shimmer(){ var ac2=getAC(),f=[1760,2093,2349,2637,3136][Math.floor(Math.random()*5)],o=ac2.createOscillator(),g=ac2.createGain(),t=ac2.currentTime; o.type='sine'; o.frequency.value=f; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.5,t+0.08); g.gain.exponentialRampToValueAtTime(0.001,t+1.2+Math.random()*0.8); o.connect(g); g.connect(shg); o.start(t); o.stop(t+2.2); setTimeout(shimmer,1500+Math.random()*3000); }
+    shimmer();
+    // Arpeggio
+    function buildArp(ci){ var root=CHORD_PROG[ci%4][0]; return [0,2,4,5,4,2,1,3,5,3,1,0].map(function(i){ return root*PENTA[i%6]*(i>5?2:1); }); }
+    function schedArp(){ var ac2=getAC(),seq=buildArp(_arpStep),ag=ac2.createGain(),STEP=0.22+Math.random()*0.06; ag.gain.value=0.022; ag.connect(bus); seq.forEach(function(f,i){ var t=ac2.currentTime+i*STEP,o=ac2.createOscillator(),g=ac2.createGain(); o.type='sine'; o.frequency.value=f; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(1,t+0.04); g.gain.exponentialRampToValueAtTime(0.001,t+STEP*0.85); o.connect(g); g.connect(ag); o.start(t); o.stop(t+STEP); }); setTimeout(function(){ _arpStep++; schedArp(); },seq.length*STEP*1000-200); }
+    schedArp();
+    // Chord change every 16-24s
+    function chordChange(){ setTimeout(function(){ _chordIdx=(_chordIdx+1)%4; var chord=CHORD_PROG[_chordIdx]; _padOscs.forEach(function(p,i){ p.osc.frequency.linearRampToValueAtTime(chord[i%chord.length],getAC().currentTime+4); }); chordChange(); },16000+Math.random()*8000); }
+    chordChange();
+}
+const MERGE_NOTES=[523,622,698,784,880,988,1047,1175,1319,1480,1661];
+function playDrop(){ try{ var ac=getAC(),buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.15),ac.sampleRate),d=buf.getChannelData(0); for(var i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.5); var src=ac.createBufferSource(),bp=ac.createBiquadFilter(),g=ac.createGain(); bp.type='bandpass'; bp.frequency.setValueAtTime(600,ac.currentTime); bp.frequency.exponentialRampToValueAtTime(200,ac.currentTime+0.14); bp.Q.value=3; g.gain.setValueAtTime(0.28,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.15); src.buffer=buf; src.connect(bp); bp.connect(g); g.connect(ac.destination); src.start(); src.stop(ac.currentTime+0.18); }catch(e){} }
+function playMerge(lvl){ try{ var ac=getAC(),freq=MERGE_NOTES[Math.min(lvl,10)],dur=0.2+lvl*0.05,o=ac.createOscillator(),g=ac.createGain(); o.type=lvl>=7?'triangle':'sine'; o.frequency.value=freq; g.gain.setValueAtTime(0.35,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur); o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur+0.1); if(lvl>=5){ var o2=ac.createOscillator(),g2=ac.createGain(); o2.type='sine'; o2.frequency.value=freq*0.5; g2.gain.setValueAtTime(0.18,ac.currentTime); g2.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur*0.8); o2.connect(g2); g2.connect(ac.destination); o2.start(); o2.stop(ac.currentTime+dur); } if(lvl===10){ var s=ac.createOscillator(),sg=ac.createGain(); s.type='sawtooth'; s.frequency.value=30; sg.gain.setValueAtTime(0.3,ac.currentTime); sg.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+1.8); s.connect(sg); sg.connect(ac.destination); s.start(); s.stop(ac.currentTime+2); } }catch(e){} }
+function playCombo(n){ try{ var ac=getAC(),base=[523,659,784,1047][Math.min(n-2,3)]; [0,0.1,0.2].forEach(function(dt,i){ var o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+dt; o.type='sine'; o.frequency.value=base*[1,1.25,1.5][i]; g.gain.setValueAtTime(0.22,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.25); o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.3); }); }catch(e){} }
+function playGameOver(){ try{ var ac=getAC(); [392,349,330,293,262].forEach(function(f,i){ var o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+i*0.18; o.type='sine'; o.frequency.value=f; g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.35); o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.4); }); }catch(e){} }
+function playLevelUp(){ try{ var ac=getAC(); [523,659,784,1047,1319].forEach(function(f,i){ var o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+i*0.12; o.type='triangle'; o.frequency.value=f; g.gain.setValueAtTime(0.28,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.4); o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.5); }); }catch(e){} }
+
+
 document.getElementById('hsEl').textContent='BEST: '+hs;
 
 // ── Background ───────────────────────────────────────────────────────────────
@@ -443,6 +486,7 @@ function doCombo(){
     clearTimeout(comboTmr);
     comboTmr=setTimeout(()=>{ combo=0; document.getElementById('comboEl').textContent=''; },COMBO_MS);
     document.getElementById('comboEl').textContent=combo>=2?`COMBO \xd7${combo}`:'';
+    if(combo>=2) playCombo(combo);
 }
 
 // ── Physics ──────────────────────────────────────────────────────────────────
@@ -474,6 +518,7 @@ function onCol(ev){
             const gained=Math.round(SCORES[nl]*(combo>=2?1+combo*.25:1));
             score+=gained;
             document.getElementById('scoreEl').textContent=score;
+            playMerge(nl);
             doCombo();
             const nova=nl>=8;
             spawnParticles(mx,my,nl,nova);
@@ -513,6 +558,7 @@ function blackHoleGravity(){
 // ── Drop & game over ─────────────────────────────────────────────────────────
 function drop(){
     if(!canDrop||dead) return;
+    startMusic(); playDrop();
     const spd=16; addBall(W/2,AIM_Y,cur,false); const nb=balls[balls.length-1]; Body.setVelocity(nb,{x:Math.cos(aimAngle)*spd,y:0});
     cur=nxt; nxt=rndLvl(); drawPreview();
     canDrop=false;
@@ -532,6 +578,7 @@ function checkDead(){
             if(passed&&hasNext){
                 document.getElementById('goTitle').textContent='LEVEL '+currentLevel+' VOLTOOID!';
                 document.getElementById('goSub').textContent='Score: '+score+' — door naar level '+(currentLevel+1)+'!';
+                playLevelUp();
                 document.getElementById('nextLvlBtn').style.display='block';
                 document.getElementById('restartBtn').textContent='Opnieuw (lvl '+currentLevel+')';
             } else {
@@ -541,6 +588,7 @@ function checkDead(){
                 document.getElementById('nextLvlBtn').style.display='none';
                 document.getElementById('restartBtn').textContent='Opnieuw proberen';
             }
+            playGameOver();
             document.getElementById('goPanel').style.display='block';
             return;
         }
