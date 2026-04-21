@@ -7,8 +7,8 @@
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box;}
-html,body{height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',Arial,sans-serif;color:#fff;user-select:none;}
-body{display:flex;flex-direction:column;}
+html,body{height:100dvh;max-height:100dvh;overflow:hidden;background:#000;font-family:'Segoe UI',Arial,sans-serif;color:#fff;user-select:none;}
+body{display:flex;flex-direction:column;height:100dvh;}
 #hud{
   height:52px;flex-shrink:0;padding:0 14px;
   display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -925,8 +925,9 @@ gc.addEventListener('touchend',e=>{
 
 // ── Canvas fit ────────────────────────────────────────────────────────────
 function fitCanvas(){
-  const wrap=document.getElementById('wrap');
-  const cw=wrap.clientWidth,ch=wrap.clientHeight;
+  const hudH=document.getElementById('hud').offsetHeight||52;
+  const cw=window.innerWidth;
+  const ch=window.innerHeight-hudH;
   let dw=cw,dh=cw*(H/W);
   if(dh>ch){dh=ch;dw=ch*(W/H);}
   gc.style.width=Math.floor(dw)+'px';
@@ -938,12 +939,16 @@ window.addEventListener('resize',fitCanvas);
 gc=document.getElementById('gc');
 gc.width=W;gc.height=H;
 ctx=gc.getContext('2d');
-fitCanvas();
-updateHUD();
-buildBg();initDust();setupEngine();
-cur=rndLvl();nxt=rndLvl();drawPreview();
-showAnnounce(null);
-loop();
+function startGame(){
+  fitCanvas();
+  updateHUD();
+  buildBg();initDust();setupEngine();
+  cur=rndLvl();nxt=rndLvl();drawPreview();
+  showAnnounce(null);
+  loop();
+}
+// defer one frame so browser completes layout before we measure
+requestAnimationFrame(startGame);
 
 </script>
 </body>
