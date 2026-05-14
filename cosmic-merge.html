@@ -892,6 +892,11 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
+// ── Init (canvas element must be assigned before event listeners) ─────────
+gc=document.getElementById('gc');
+gc.width=W;gc.height=H;
+ctx=gc.getContext('2d');
+
 // ── Input ─────────────────────────────────────────────────────────────────
 gc.addEventListener('mousemove',e=>{const r=gc.getBoundingClientRect();updateAim(e.clientX-r.left,e.clientY-r.top);});
 gc.addEventListener('click',()=>drop());
@@ -948,10 +953,7 @@ function fitCanvas(){
 window.addEventListener('resize',fitCanvas);
 window.addEventListener('orientationchange',()=>setTimeout(fitCanvas,300));
 
-// ── Init ──────────────────────────────────────────────────────────────────
-gc=document.getElementById('gc');
-gc.width=W;gc.height=H;
-ctx=gc.getContext('2d');
+// ── Start ──────────────────────────────────────────────────────────────────
 function startGame(){
   fitCanvas();
   updateHUD();
