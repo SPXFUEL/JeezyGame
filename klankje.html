@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Klankje</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0f0c29;touch-action:none}
+canvas{display:block;position:fixed;top:0;left:0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const gc = document.getElementById('c');
+const ctx = gc.getContext('2d');
+
+let W, H, DPR;
+
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  gc.width = W * DPR;
+  gc.height = H * DPR;
+  gc.style.width = W + 'px';
+  gc.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+resize();
+window.addEventListener('resize', () => { resize(); draw(); });
+
+// ── State ──────────────────────────────────────────────────────────────────
+let state = 'start'; // start | mode1 | mode2 | mode3 | done
+let prevMode = 1;
+let mode2Round = 0, mode3Round = 0;
+let mode2Score = 0, mode3Score = 0;
+
+// ── Bubbles (background decor) ─────────────────────────────────────────────
+const BUBBLES = Array.from({length: 18}, () => ({
+  x: Math.random(),
+  y: Math.random(),
+  r: 18 + Math.random() * 60,
+  vx: (Math.random() - 0.5) * 0.00015,
+  vy: -0.00005 - Math.random() * 0.0001,
+  hue: [310, 180, 45, 270, 0][Math.floor(Math.random()*5)],
+  sat: 60 + Math.random() * 30,
+  alpha: 0.07 + Math.random() * 0.13
+}));
+
+function updateBubbles() {
+  BUBBLES.forEach(b => {
+    b.x += b.vx;
+    b.y += b.vy;
+    if (b.y < -0.1) { b.y = 1.1; b.x = Math.random(); }
+    if (b.x < -0.1) b.x = 1.1;
+    if (b.x > 1.1) b.x = -0.1;
+  });
+}
+
+// ── Particles ──────────────────────────────────────────────────────────────
+let particles = [];
+function burst(x, y, color) {
+  for (let i = 0; i < 24; i++) {
+    const a = (Math.PI * 2 * i) / 24 + Math.random() * 0.3;
+    const spd = 2 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * spd,
+      vy: Math.sin(a) * spd,
+      r: 4 + Math.random() * 6,
+      life: 1,
+      color: color || `hsl(${Math.random()*360},80%,65%)`
+    });
+  }
+}
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.12;
+    p.vx *= 0.96; p.vy *= 0.96;
+    p.life -= 0.025;
+  });
+}
+
+// ── Speech ─────────────────────────────────────────────────────────────────
+let speechAllowed = false;
+function speak(text, rate) {
+  if (!speechAllowed) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'nl-NL';
+  u.rate = rate || 0.85;
+  u.pitch = 1.1;
+  window.speechSynthesis.speak(u);
+}
+function speakSlow(text) { speak(text, 0.6); }
+
+// ── Drawing helpers ────────────────────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawGlowText(ctx, text, x, y, size, color, glow) {
+  ctx.save();
+  ctx.font = `bold ${size}px 'Segoe UI', system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (glow) {
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = 20;
+  }
+  ctx.fillStyle = color || '#fff';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+// ── ANIMAL DRAWINGS ────────────────────────────────────────────────────────
+
+function drawKat(ctx, x, y, r) {
+  // Orange cat face
+  const g = ctx.createRadialGradient(x, y - r*0.1, r*0.1, x, y, r);
+  g.addColorStop(0, '#ffb347');
+  g.addColorStop(1, '#e07020');
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  // ears
+  ctx.fillStyle = '#e07020';
+  ctx.beginPath(); ctx.moveTo(x - r*0.6, y - r*0.7); ctx.lineTo(x - r*0.9, y - r*1.2); ctx.lineTo(x - r*0.2, y - r*0.85); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + r*0.6, y - r*0.7); ctx.lineTo(x + r*0.9, y - r*1.2); ctx.lineTo(x + r*0.2, y - r*0.85); ctx.closePath(); ctx.fill();
+  // inner ears
+  ctx.fillStyle = '#ffccaa';
+  ctx.beginPath(); ctx.moveTo(x - r*0.58, y - r*0.75); ctx.lineTo(x - r*0.8, y - r*1.1); ctx.lineTo(x - r*0.28, y - r*0.88); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + r*0.58, y - r*0.75); ctx.lineTo(x + r*0.8, y - r*1.1); ctx.lineTo(x + r*0.28, y - r*0.88); ctx.closePath(); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(x - r*0.3, y - r*0.1, r*0.12, r*0.16, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + r*0.3, y - r*0.1, r*0.12, r*0.16, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x - r*0.26, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + r*0.34, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
+  // nose
+  ctx.fillStyle = '#ff8aab';
+  ctx.beginPath(); ctx.moveTo(x, y + r*0.15); ctx.lineTo(x - r*0.1, y + r*0.05); ctx.lineTo(x + r*0.1, y + r*0.05); ctx.closePath(); ctx.fill();
+  // whiskers
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x - r*0.1, y + r*0.1); ctx.lineTo(x - r*0.8, y + r*0.05); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - r*0.1, y + r*0.18); ctx.lineTo(x - r*0.8, y + r*0.25); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.1, y + r*0.1); ctx.lineTo(x + r*0.8, y + r*0.05); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.1, y + r*0.18); ctx.lineTo(x + r*0.8, y + r*0.25); ctx.stroke();
+  // smile
+  ctx.strokeStyle = '#c04040'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x - r*0.1, y + r*0.22, r*0.12, 0, Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + r*0.1, y + r*0.22, r*0.12, 0, Math.PI); ctx.stroke();
+}
+
+function drawHond(ctx, x, y, r) {
+  // Brown dog
+  ctx.fillStyle = '#a0622a';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  // floppy ears
+  const eg = ctx.createLinearGradient(x - r, y - r*0.3, x - r*1.1, y + r*0.6);
+  eg.addColorStop(0, '#7a4010'); eg.addColorStop(1, '#5a2c08');
+  ctx.fillStyle = eg;
+  ctx.beginPath(); ctx.ellipse(x - r*0.82, y + r*0.15, r*0.32, r*0.55, -0.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + r*0.82, y + r*0.15, r*0.32, r*0.55, 0.3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#a0622a';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  // snout
+  ctx.fillStyle = '#c8885a';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.3, r*0.38, r*0.26, 0, 0, Math.PI*2); ctx.fill();
+  // nose
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.15, r*0.14, r*0.1, 0, 0, Math.PI*2); ctx.fill();
+  // nostrils
+  ctx.fillStyle = '#1a0a00';
+  ctx.beginPath(); ctx.arc(x - r*0.05, y + r*0.14, r*0.03, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.05, y + r*0.14, r*0.03, 0, Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.arc(x - r*0.28, y - r*0.12, r*0.13, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.28, y - r*0.12, r*0.13, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.24, y - r*0.16, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.32, y - r*0.16, r*0.04, 0, Math.PI*2); ctx.fill();
+  // tongue
+  ctx.fillStyle = '#ff6a80';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.44, r*0.16, r*0.2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#d04060'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(x, y + r*0.35); ctx.lineTo(x, y + r*0.6); ctx.stroke();
+}
+
+function drawKoe(ctx, x, y, r) {
+  // White/black spotted cow
+  ctx.fillStyle = '#f5f0e8';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  // spots
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.ellipse(x + r*0.35, y - r*0.4, r*0.28, r*0.2, 0.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x - r*0.3, y + r*0.2, r*0.22, r*0.18, -0.3, 0, Math.PI*2); ctx.fill();
+  // horns
+  ctx.strokeStyle = '#c8a060'; ctx.lineWidth = r*0.1;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - r*0.4, y - r*0.8); ctx.quadraticCurveTo(x - r*0.6, y - r*1.3, x - r*0.2, y - r*1.1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.4, y - r*0.8); ctx.quadraticCurveTo(x + r*0.6, y - r*1.3, x + r*0.2, y - r*1.1); ctx.stroke();
+  // ears
+  ctx.fillStyle = '#f5f0e8'; ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(x - r*0.82, y - r*0.55, r*0.22, r*0.32, -0.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x + r*0.82, y - r*0.55, r*0.22, r*0.32, 0.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffaabb';
+  ctx.beginPath(); ctx.ellipse(x - r*0.82, y - r*0.55, r*0.12, r*0.2, -0.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + r*0.82, y - r*0.55, r*0.12, r*0.2, 0.5, 0, Math.PI*2); ctx.fill();
+  // snout
+  ctx.fillStyle = '#f0c0a0';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.32, r*0.4, r*0.28, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#d09080';
+  ctx.beginPath(); ctx.ellipse(x - r*0.13, y + r*0.28, r*0.07, r*0.06, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + r*0.13, y + r*0.28, r*0.07, r*0.06, 0, 0, Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.arc(x - r*0.28, y - r*0.15, r*0.12, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.28, y - r*0.15, r*0.12, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.24, y - r*0.19, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.32, y - r*0.19, r*0.04, 0, Math.PI*2); ctx.fill();
+}
+
+function drawEend(ctx, x, y, r) {
+  // Yellow duck
+  const g = ctx.createRadialGradient(x - r*0.2, y - r*0.2, r*0.05, x, y, r);
+  g.addColorStop(0, '#ffe566');
+  g.addColorStop(1, '#f0a820');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  // bill
+  ctx.fillStyle = '#ff8c00';
+  ctx.beginPath(); ctx.ellipse(x + r*0.7, y + r*0.25, r*0.32, r*0.16, 0.2, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#d06000'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x + r*0.42, y + r*0.22); ctx.lineTo(x + r*0.98, y + r*0.22); ctx.stroke();
+  // eye
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath(); ctx.arc(x + r*0.22, y - r*0.18, r*0.13, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x + r*0.26, y - r*0.22, r*0.04, 0, Math.PI*2); ctx.fill();
+  // wing hint
+  ctx.strokeStyle = '#f0a820'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(x - r*0.15, y + r*0.2, r*0.5, r*0.28, -0.3, 0, Math.PI); ctx.stroke();
+  // crown tuft
+  ctx.strokeStyle = '#f0a820'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - r*0.1, y - r); ctx.lineTo(x - r*0.05, y - r*1.3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.1, y - r); ctx.lineTo(x + r*0.18, y - r*1.35); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.28, y - r*0.92); ctx.lineTo(x + r*0.4, y - r*1.2); ctx.stroke();
+}
+
+function drawLeeuw(ctx, x, y, r) {
+  // Lion with mane
+  // mane
+  const mg = ctx.createRadialGradient(x, y, r*0.5, x, y, r*1.2);
+  mg.addColorStop(0, '#c8720a');
+  mg.addColorStop(1, '#7a3800');
+  ctx.beginPath(); ctx.arc(x, y, r*1.18, 0, Math.PI*2);
+  ctx.fillStyle = mg; ctx.fill();
+  // mane spikes
+  ctx.fillStyle = '#8b4500';
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI*2*i/10) - Math.PI*0.1;
+    const mx = x + Math.cos(a)*r*1.1;
+    const my = y + Math.sin(a)*r*1.1;
+    ctx.beginPath();
+    ctx.ellipse(mx, my, r*0.12, r*0.22, a, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // face
+  const fg = ctx.createRadialGradient(x, y - r*0.1, r*0.1, x, y, r*0.85);
+  fg.addColorStop(0, '#f0c060');
+  fg.addColorStop(1, '#d09030');
+  ctx.beginPath(); ctx.arc(x, y, r*0.82, 0, Math.PI*2);
+  ctx.fillStyle = fg; ctx.fill();
+  // ears
+  ctx.fillStyle = '#d09030';
+  ctx.beginPath(); ctx.arc(x - r*0.68, y - r*0.72, r*0.22, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.68, y - r*0.72, r*0.22, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffb870';
+  ctx.beginPath(); ctx.arc(x - r*0.68, y - r*0.72, r*0.14, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.68, y - r*0.72, r*0.14, 0, Math.PI*2); ctx.fill();
+  // snout
+  ctx.fillStyle = '#e8a850';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.28, r*0.38, r*0.26, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.14, r*0.1, r*0.07, 0, 0, Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.arc(x - r*0.3, y - r*0.1, r*0.13, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.3, y - r*0.1, r*0.13, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.26, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.34, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
+  // smile
+  ctx.strokeStyle = '#8b4500'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x - r*0.1, y + r*0.4, r*0.12, 0, Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + r*0.1, y + r*0.4, r*0.12, 0, Math.PI); ctx.stroke();
+}
+
+function drawKikker(ctx, x, y, r) {
+  // Green frog
+  // big eyes on top
+  ctx.fillStyle = '#2a8a2a';
+  ctx.beginPath(); ctx.arc(x - r*0.35, y - r*0.9, r*0.32, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.35, y - r*0.9, r*0.32, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1a6a1a';
+  ctx.beginPath(); ctx.arc(x - r*0.35, y - r*0.9, r*0.26, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.35, y - r*0.9, r*0.26, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1a1a00';
+  ctx.beginPath(); ctx.arc(x - r*0.35, y - r*0.9, r*0.16, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.35, y - r*0.9, r*0.16, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.3, y - r*0.96, r*0.06, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.4, y - r*0.96, r*0.06, 0, Math.PI*2); ctx.fill();
+  // head/body
+  const fg = ctx.createRadialGradient(x, y, r*0.1, x, y + r*0.1, r);
+  fg.addColorStop(0, '#5cd65c');
+  fg.addColorStop(1, '#2a8a2a');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = fg; ctx.fill();
+  // belly
+  ctx.fillStyle = '#a0e8a0';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.25, r*0.55, r*0.42, 0, 0, Math.PI*2); ctx.fill();
+  // mouth
+  ctx.strokeStyle = '#1a6a1a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y + r*0.15, r*0.55, 0.15, Math.PI - 0.15); ctx.stroke();
+  // smile corners
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.52, y + r*0.15, r*0.08, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.52, y + r*0.15, r*0.08, 0, Math.PI*2); ctx.fill();
+}
+
+// ── OBJECT DRAWINGS ────────────────────────────────────────────────────────
+
+function drawMaan(ctx, x, y, r) {
+  // Crescent moon
+  const g = ctx.createRadialGradient(x - r*0.2, y - r*0.2, r*0.1, x, y, r);
+  g.addColorStop(0, '#fff7c0');
+  g.addColorStop(1, '#f0c840');
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.32, y - r*0.15, r*0.82, 0, Math.PI*2);
+  ctx.fillStyle = '#302b63'; ctx.fill();
+  // stars near moon
+  ctx.fillStyle = '#fff7c0';
+  [[x + r*1.1, y - r*0.6, 4],[x - r*1.0, y + r*0.3, 3],[x + r*0.5, y + r*1.1, 3]].forEach(([sx,sy,sr]) => {
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawVis(ctx, x, y, r) {
+  ctx.save();
+  // body
+  const g = ctx.createLinearGradient(x - r, y, x + r, y);
+  g.addColorStop(0, '#4aa8ff');
+  g.addColorStop(1, '#0060c0');
+  ctx.beginPath(); ctx.ellipse(x - r*0.1, y, r*0.75, r*0.42, 0, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  // tail
+  ctx.fillStyle = '#0060c0';
+  ctx.beginPath(); ctx.moveTo(x + r*0.6, y); ctx.lineTo(x + r, y - r*0.4); ctx.lineTo(x + r, y + r*0.4); ctx.closePath(); ctx.fill();
+  // scales hint
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath(); ctx.arc(x - r*0.2 + i*r*0.25, y, r*0.25, Math.PI*0.15, Math.PI*0.85); ctx.stroke();
+  }
+  // fin
+  ctx.fillStyle = '#2090ff';
+  ctx.beginPath(); ctx.moveTo(x - r*0.2, y - r*0.38); ctx.lineTo(x, y - r*0.7); ctx.lineTo(x + r*0.2, y - r*0.38); ctx.closePath(); ctx.fill();
+  // eye
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath(); ctx.arc(x - r*0.42, y - r*0.08, r*0.12, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.38, y - r*0.12, r*0.04, 0, Math.PI*2); ctx.fill();
+  // bubble
+  ctx.strokeStyle = 'rgba(180,220,255,0.7)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x - r*0.7, y - r*0.35, r*0.08, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawZon(ctx, x, y, r) {
+  ctx.save();
+  // rays
+  ctx.strokeStyle = '#ffd700'; ctx.lineWidth = r*0.12; ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI*2*i/8;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a)*r*0.72, y + Math.sin(a)*r*0.72);
+    ctx.lineTo(x + Math.cos(a)*r*1.1, y + Math.sin(a)*r*1.1);
+    ctx.stroke();
+  }
+  // circle
+  const g = ctx.createRadialGradient(x - r*0.2, y - r*0.2, r*0.1, x, y, r*0.65);
+  g.addColorStop(0, '#fff07a');
+  g.addColorStop(1, '#ffc200');
+  ctx.beginPath(); ctx.arc(x, y, r*0.65, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  // eyes
+  ctx.fillStyle = '#4a2000';
+  ctx.beginPath(); ctx.arc(x - r*0.2, y - r*0.1, r*0.09, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.2, y - r*0.1, r*0.09, 0, Math.PI*2); ctx.fill();
+  // smile
+  ctx.strokeStyle = '#4a2000'; ctx.lineWidth = r*0.07; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y + r*0.1, r*0.25, 0.2, Math.PI - 0.2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBoom(ctx, x, y, r) {
+  ctx.save();
+  // trunk
+  const tg = ctx.createLinearGradient(x - r*0.18, 0, x + r*0.18, 0);
+  tg.addColorStop(0, '#8b4513'); tg.addColorStop(1, '#5c2a06');
+  ctx.fillStyle = tg;
+  roundRect(ctx, x - r*0.18, y + r*0.25, r*0.36, r*0.75, r*0.08);
+  ctx.fill();
+  // three layers of foliage
+  [[0, 0.3, 0.7, '#3aaa3a'],[0, -0.05, 0.58, '#2d9030'],[0, -0.4, 0.45, '#22a040']].forEach(([dx, dy, sr, col]) => {
+    const gg = ctx.createRadialGradient(x + dx*r, y + dy*r - sr*r*0.2, sr*r*0.1, x + dx*r, y + dy*r, sr*r);
+    gg.addColorStop(0, col); gg.addColorStop(1, '#1a5a20');
+    ctx.beginPath(); ctx.arc(x + dx*r, y + dy*r, sr*r, 0, Math.PI*2);
+    ctx.fillStyle = gg; ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawBeer(ctx, x, y, r) {
+  // Purple bear
+  ctx.fillStyle = '#8060b0';
+  ctx.beginPath(); ctx.arc(x - r*0.55, y - r*0.72, r*0.32, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.55, y - r*0.72, r*0.32, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c0a0e0';
+  ctx.beginPath(); ctx.arc(x - r*0.55, y - r*0.72, r*0.18, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.55, y - r*0.72, r*0.18, 0, Math.PI*2); ctx.fill();
+  const g = ctx.createRadialGradient(x, y - r*0.1, r*0.1, x, y, r);
+  g.addColorStop(0, '#a080d0'); g.addColorStop(1, '#6040a0');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.fillStyle = '#d0b0f0';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.3, r*0.42, r*0.32, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(x, y + r*0.18, r*0.12, r*0.08, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.arc(x - r*0.28, y - r*0.1, r*0.12, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.28, y - r*0.1, r*0.12, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - r*0.24, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.32, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#4a2080'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y + r*0.42, r*0.16, 0.1, Math.PI - 0.1); ctx.stroke();
+}
+
+function drawPeer(ctx, x, y, r) {
+  ctx.save();
+  // pear shape
+  const g = ctx.createRadialGradient(x - r*0.15, y + r*0.15, r*0.05, x, y + r*0.2, r*0.85);
+  g.addColorStop(0, '#c8e870');
+  g.addColorStop(0.6, '#90c820');
+  g.addColorStop(1, '#609010');
+  ctx.beginPath();
+  ctx.moveTo(x, y - r*0.85);
+  ctx.bezierCurveTo(x + r*0.15, y - r*0.85, x + r*0.5, y - r*0.5, x + r*0.65, y + r*0.1);
+  ctx.bezierCurveTo(x + r*0.8, y + r*0.7, x + r*0.5, y + r, x, y + r);
+  ctx.bezierCurveTo(x - r*0.5, y + r, x - r*0.8, y + r*0.7, x - r*0.65, y + r*0.1);
+  ctx.bezierCurveTo(x - r*0.5, y - r*0.5, x - r*0.15, y - r*0.85, x, y - r*0.85);
+  ctx.closePath();
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = '#609010'; ctx.lineWidth = 1.5; ctx.stroke();
+  // stem
+  ctx.strokeStyle = '#5a3000'; ctx.lineWidth = r*0.1; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y - r*0.82); ctx.lineTo(x + r*0.1, y - r*1.15); ctx.stroke();
+  // leaf
+  ctx.fillStyle = '#50a010';
+  ctx.beginPath(); ctx.ellipse(x + r*0.25, y - r*1.1, r*0.22, r*0.1, -0.6, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBal(ctx, x, y, r) {
+  ctx.save();
+  const g = ctx.createRadialGradient(x - r*0.25, y - r*0.25, r*0.1, x, y, r);
+  g.addColorStop(0, '#ffb0cc');
+  g.addColorStop(1, '#e0507a');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  // stripes
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = r*0.2;
+  ctx.beginPath(); ctx.moveTo(x - r*1.5, y - r*0.5); ctx.lineTo(x + r*1.5, y + r*0.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - r*1.5, y + r*0.1); ctx.lineTo(x + r*1.5, y + r*1.1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - r*1.5, y - r*1.1); ctx.lineTo(x + r*1.5, y - r*0.1); ctx.stroke();
+  ctx.restore();
+  // shine
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.ellipse(x - r*0.3, y - r*0.35, r*0.22, r*0.14, -0.5, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawHuis(ctx, x, y, r) {
+  ctx.save();
+  // body
+  const g = ctx.createLinearGradient(x - r*0.7, y, x + r*0.7, y);
+  g.addColorStop(0, '#e8d0b0'); g.addColorStop(1, '#c8a880');
+  roundRect(ctx, x - r*0.7, y - r*0.2, r*1.4, r*1.1, r*0.08);
+  ctx.fillStyle = g; ctx.fill();
+  // door
+  ctx.fillStyle = '#8b4513';
+  roundRect(ctx, x - r*0.16, y + r*0.3, r*0.32, r*0.6, r*0.06);
+  ctx.fill();
+  ctx.fillStyle = '#f0c060';
+  ctx.beginPath(); ctx.arc(x + r*0.1, y + r*0.62, r*0.04, 0, Math.PI*2); ctx.fill();
+  // windows
+  ctx.fillStyle = '#90c8ff';
+  roundRect(ctx, x - r*0.58, y + r*0.05, r*0.3, r*0.28, r*0.04); ctx.fill();
+  roundRect(ctx, x + r*0.28, y + r*0.05, r*0.3, r*0.28, r*0.04); ctx.fill();
+  ctx.strokeStyle = '#4080a0'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x - r*0.43, y + r*0.05); ctx.lineTo(x - r*0.43, y + r*0.33); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - r*0.58, y + r*0.19); ctx.lineTo(x - r*0.28, y + r*0.19); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.43, y + r*0.05); ctx.lineTo(x + r*0.43, y + r*0.33); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r*0.28, y + r*0.19); ctx.lineTo(x + r*0.58, y + r*0.19); ctx.stroke();
+  // roof
+  ctx.fillStyle = '#c05030';
+  ctx.beginPath(); ctx.moveTo(x, y - r*1.1); ctx.lineTo(x - r*0.85, y - r*0.2); ctx.lineTo(x + r*0.85, y - r*0.2); ctx.closePath(); ctx.fill();
+  // chimney
+  ctx.fillStyle = '#a04020';
+  ctx.fillRect(x + r*0.35, y - r*1.05, r*0.2, r*0.35);
+  ctx.fillStyle = '#555'; ctx.beginPath(); ctx.ellipse(x + r*0.45, y - r*1.05, r*0.13, r*0.06, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBus(ctx, x, y, r) {
+  ctx.save();
+  const g = ctx.createLinearGradient(x - r, y - r*0.5, x + r, y + r*0.5);
+  g.addColorStop(0, '#4090ff'); g.addColorStop(1, '#1050c0');
+  roundRect(ctx, x - r, y - r*0.55, r*2, r*1.1, r*0.18);
+  ctx.fillStyle = g; ctx.fill();
+  // windows
+  ctx.fillStyle = '#c8e8ff';
+  [[x - r*0.6, y - r*0.32],[x - r*0.15, y - r*0.32],[x + r*0.3, y - r*0.32]].forEach(([wx, wy]) => {
+    roundRect(ctx, wx, wy, r*0.3, r*0.3, r*0.06); ctx.fill();
+  });
+  // door
+  ctx.fillStyle = '#2060d0';
+  roundRect(ctx, x + r*0.68, y - r*0.1, r*0.22, r*0.45, r*0.05); ctx.fill();
+  // wheels
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.arc(x - r*0.55, y + r*0.58, r*0.25, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.45, y + r*0.58, r*0.25, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#666';
+  ctx.beginPath(); ctx.arc(x - r*0.55, y + r*0.58, r*0.14, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.45, y + r*0.58, r*0.14, 0, Math.PI*2); ctx.fill();
+  // headlight
+  ctx.fillStyle = '#ffffa0';
+  ctx.beginPath(); ctx.ellipse(x - r*0.88, y, r*0.1, r*0.08, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawRoos(ctx, x, y, r) {
+  ctx.save();
+  // stem
+  ctx.strokeStyle = '#306020'; ctx.lineWidth = r*0.12; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y + r*0.3); ctx.bezierCurveTo(x + r*0.2, y + r*0.6, x - r*0.1, y + r*0.85, x, y + r); ctx.stroke();
+  // leaf
+  ctx.fillStyle = '#408030';
+  ctx.beginPath(); ctx.ellipse(x + r*0.3, y + r*0.65, r*0.25, r*0.12, 0.5, 0, Math.PI*2); ctx.fill();
+  // petals
+  const pColors = ['#e83060','#ff4080','#d02050','#ff6090'];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI*2*i/6;
+    ctx.fillStyle = pColors[i%pColors.length];
+    ctx.beginPath(); ctx.ellipse(x + Math.cos(a)*r*0.38, y + Math.sin(a)*r*0.38 - r*0.15, r*0.28, r*0.2, a, 0, Math.PI*2); ctx.fill();
+  }
+  // center
+  const cg = ctx.createRadialGradient(x, y - r*0.15, r*0.02, x, y - r*0.15, r*0.28);
+  cg.addColorStop(0, '#fff0a0'); cg.addColorStop(1, '#e8b820');
+  ctx.beginPath(); ctx.arc(x, y - r*0.15, r*0.28, 0, Math.PI*2);
+  ctx.fillStyle = cg; ctx.fill();
+  ctx.restore();
+}
+
+function drawPan(ctx, x, y, r) {
+  ctx.save();
+  // handle
+  ctx.strokeStyle = '#888'; ctx.lineWidth = r*0.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + r*0.65, y); ctx.lineTo(x + r*1.15, y); ctx.stroke();
+  // pan body
+  const g = ctx.createLinearGradient(x, y - r*0.4, x, y + r*0.4);
+  g.addColorStop(0, '#b8b8b8'); g.addColorStop(1, '#707070');
+  ctx.beginPath(); ctx.ellipse(x, y, r*0.72, r*0.42, 0, 0, Math.PI*2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.stroke();
+  // inner surface
+  ctx.fillStyle = '#2a2a2a';
+  ctx.beginPath(); ctx.ellipse(x - r*0.05, y, r*0.56, r*0.32, 0, 0, Math.PI*2); ctx.fill();
+  // shine
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.beginPath(); ctx.ellipse(x - r*0.2, y - r*0.12, r*0.2, r*0.08, -0.3, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawTas(ctx, x, y, r) {
+  ctx.save();
+  const g = ctx.createLinearGradient(x, y - r*0.7, x, y + r*0.7);
+  g.addColorStop(0, '#9060d0'); g.addColorStop(1, '#5030a0');
+  // bag body
+  roundRect(ctx, x - r*0.65, y - r*0.38, r*1.3, r*1.08, r*0.14);
+  ctx.fillStyle = g; ctx.fill();
+  // handle
+  ctx.strokeStyle = '#7050c0'; ctx.lineWidth = r*0.14; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y - r*0.55, r*0.38, Math.PI, 0); ctx.stroke();
+  // clasp
+  ctx.fillStyle = '#f0c040';
+  ctx.beginPath(); ctx.arc(x, y + r*0.1, r*0.14, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#c09020'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y + r*0.1, r*0.08, 0, Math.PI*2); ctx.stroke();
+  // decorative line
+  ctx.strokeStyle = '#7050c0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - r*0.65, y - r*0.05); ctx.lineTo(x + r*0.65, y - r*0.05); ctx.stroke();
+  ctx.restore();
+}
+
+function drawNeus(ctx, x, y, r) {
+  ctx.save();
+  // face circle
+  ctx.fillStyle = '#f5d5a0';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  // nose - prominent
+  const ng = ctx.createRadialGradient(x - r*0.1, y - r*0.05, r*0.02, x, y + r*0.05, r*0.42);
+  ng.addColorStop(0, '#f0b888'); ng.addColorStop(1, '#d08040');
+  ctx.beginPath();
+  ctx.moveTo(x, y - r*0.5);
+  ctx.bezierCurveTo(x + r*0.1, y - r*0.5, x + r*0.45, y + r*0.2, x + r*0.42, y + r*0.3);
+  ctx.bezierCurveTo(x + r*0.38, y + r*0.5, x - r*0.38, y + r*0.5, x - r*0.42, y + r*0.3);
+  ctx.bezierCurveTo(x - r*0.45, y + r*0.2, x - r*0.1, y - r*0.5, x, y - r*0.5);
+  ctx.fillStyle = ng; ctx.fill();
+  // nostrils
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(x - r*0.16, y + r*0.38, r*0.1, r*0.07, -0.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + r*0.16, y + r*0.38, r*0.1, r*0.07, 0.3, 0, Math.PI*2); ctx.fill();
+  // eyes above nose
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.arc(x - r*0.42, y - r*0.58, r*0.1, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.42, y - r*0.58, r*0.1, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDak(ctx, x, y, r) {
+  ctx.save();
+  // roof triangle
+  ctx.fillStyle = '#c05030';
+  ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x - r, y + r*0.4); ctx.lineTo(x + r, y + r*0.4); ctx.closePath(); ctx.fill();
+  // roof ridge
+  ctx.strokeStyle = '#a03020'; ctx.lineWidth = r*0.08;
+  ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x - r, y + r*0.4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r*0.4); ctx.stroke();
+  // tiles
+  ctx.strokeStyle = '#d06040'; ctx.lineWidth = 1.5;
+  for (let row = 0; row < 4; row++) {
+    const rowY = y - r*0.7 + row * r*0.38;
+    const hw = (rowY - (y - r)) * 0.85;
+    for (let col = -2; col <= 2; col++) {
+      ctx.beginPath();
+      ctx.arc(x + col*r*0.28, rowY, r*0.14, Math.PI, 0);
+      ctx.stroke();
+    }
+  }
+  // chimney
+  ctx.fillStyle = '#a04020';
+  ctx.fillRect(x + r*0.3, y - r*0.95, r*0.22, r*0.38);
+  ctx.fillStyle = '#777';
+  ctx.beginPath(); ctx.ellipse(x + r*0.41, y - r*0.95, r*0.14, r*0.06, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// ── Content tables ─────────────────────────────────────────────────────────
+
+const ANIMALS = [
+  { name: 'kat',    sound: 'miauw!',      draw: drawKat,   color: '#ff8c42' },
+  { name: 'hond',   sound: 'waf waf!',    draw: drawHond,  color: '#a07850' },
+  { name: 'koe',    sound: 'moeee!',      draw: drawKoe,   color: '#d0d0d0' },
+  { name: 'eend',   sound: 'kwak kwak!',  draw: drawEend,  color: '#f0c820' },
+  { name: 'leeuw',  sound: 'rrroar!',     draw: drawLeeuw, color: '#d09030' },
+  { name: 'kikker', sound: 'kwaak kwaak!',draw: drawKikker,color: '#50c850' },
+];
+
+const WORDS = [
+  { word: 'maan',  firstLetter: 'm', draw: drawMaan,  color: '#c8a0f0' },
+  { word: 'vis',   firstLetter: 'v', draw: drawVis,   color: '#4090ff' },
+  { word: 'zon',   firstLetter: 'z', draw: drawZon,   color: '#ffc820' },
+  { word: 'boom',  firstLetter: 'b', draw: drawBoom,  color: '#50a030' },
+  { word: 'beer',  firstLetter: 'b', draw: drawBeer,  color: '#a080d0' },
+  { word: 'peer',  firstLetter: 'p', draw: drawPeer,  color: '#90c820' },
+  { word: 'bal',   firstLetter: 'b', draw: drawBal,   color: '#e05080' },
+  { word: 'huis',  firstLetter: 'h', draw: drawHuis,  color: '#e8c880' },
+  { word: 'bus',   firstLetter: 'b', draw: drawBus,   color: '#4090ff' },
+  { word: 'roos',  firstLetter: 'r', draw: drawRoos,  color: '#e83060' },
+  { word: 'pan',   firstLetter: 'p', draw: drawPan,   color: '#999999' },
+  { word: 'tas',   firstLetter: 't', draw: drawTas,   color: '#9060d0' },
+  { word: 'neus',  firstLetter: 'n', draw: drawNeus,  color: '#f5d5a0' },
+  { word: 'dak',   firstLetter: 'd', draw: drawDak,   color: '#c05030' },
+];
+
+// phoneme segmentations for mode 3
+const BLEND_ROUNDS = [
+  { word: 'maan', phonemes: ['m','aa','n'],   correct: 0 },
+  { word: 'vis',  phonemes: ['v','i','s'],    correct: 1 },
+  { word: 'zon',  phonemes: ['z','o','n'],    correct: 2 },
+  { word: 'boom', phonemes: ['b','oo','m'],   correct: 3 },
+  { word: 'beer', phonemes: ['b','ee','r'],   correct: 0 },
+  { word: 'peer', phonemes: ['p','ee','r'],   correct: 1 },
+  { word: 'bal',  phonemes: ['b','a','l'],    correct: 2 },
+  { word: 'huis', phonemes: ['h','ui','s'],   correct: 3 },
+];
+
+// ── MODE 2 state ───────────────────────────────────────────────────────────
+let m2 = {};
+function initMode2Round() {
+  // pick a target word
+  const shuffled = WORDS.slice().sort(() => Math.random()-0.5);
+  const target = shuffled[0];
+  // pick 2 distractors that DON'T start with same letter
+  const distractors = shuffled.filter(w => w.firstLetter !== target.firstLetter).slice(0,2);
+  if (distractors.length < 2) {
+    const extra = shuffled.filter(w => w !== target).slice(0,2);
+    distractors.push(...extra.filter(d => !distractors.includes(d)));
+  }
+  const cards = [target, ...distractors].sort(() => Math.random()-0.5);
+  m2 = {
+    target,
+    cards,
+    correctIdx: cards.indexOf(target),
+    chosen: -1,
+    result: null,       // null | 'correct' | 'wrong'
+    showLetter: false,
+    letterTimer: 0,
+    letterProgress: 0,  // for 3-correct milestone
+  };
+  speak(`Welk woord begint met de klank /${target.firstLetter}/? Kies het goede plaatje.`, 0.82);
+}
+
+// ── MODE 3 state ───────────────────────────────────────────────────────────
+let m3 = {};
+function initMode3Round() {
+  const rd = BLEND_ROUNDS[mode3Round % BLEND_ROUNDS.length];
+  const targetWord = WORDS.find(w => w.word === rd.word);
+  // 3 distractors
+  const distractors = WORDS.filter(w => w.word !== rd.word).sort(() => Math.random()-0.5).slice(0,3);
+  const choices = [...distractors];
+  choices.splice(rd.correct, 0, targetWord);
+  m3 = {
+    rd,
+    targetWord,
+    choices,
+    phase: 'blocks', // blocks | pick
+    chosen: -1,
+    result: null,
+    blockTapped: [-1,-1,-1], // last tap time per block
+  };
+}
+
+// ── BUTTON/CARD HIT TESTING ────────────────────────────────────────────────
+let buttons = [];
+function registerBtn(x, y, w, h, id) {
+  buttons.push({x, y, w, h, id});
+}
+
+function hitTest(px, py) {
+  for (let i = buttons.length - 1; i >= 0; i--) {
+    const b = buttons[i];
+    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id;
+  }
+  return null;
+}
+
+// ── BACKGROUND ─────────────────────────────────────────────────────────────
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, W*0.3, H);
+  g.addColorStop(0, '#0f0c29');
+  g.addColorStop(0.5, '#302b63');
+  g.addColorStop(1, '#24243e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  BUBBLES.forEach(b => {
+    const gb = ctx.createRadialGradient(b.x*W, b.y*H, 0, b.x*W, b.y*H, b.r);
+    gb.addColorStop(0, `hsla(${b.hue},${b.sat}%,72%,${b.alpha * 1.6})`);
+    gb.addColorStop(1, `hsla(${b.hue},${b.sat}%,60%,0)`);
+    ctx.beginPath();
+    ctx.arc(b.x*W, b.y*H, b.r, 0, Math.PI*2);
+    ctx.fillStyle = gb;
+    ctx.fill();
+  });
+}
+
+// ── START SCREEN ───────────────────────────────────────────────────────────
+let titleGlow = 0;
+function drawStart() {
+  titleGlow = (titleGlow + 0.025) % (Math.PI * 2);
+  const gv = 0.5 + 0.5 * Math.sin(titleGlow);
+
+  ctx.save();
+  ctx.font = `bold ${Math.min(W * 0.11, 68)}px 'Segoe UI', system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = `rgba(180,120,255,${0.6 + gv * 0.4})`;
+  ctx.shadowBlur = 30 + gv * 20;
+  ctx.fillStyle = '#fff';
+  ctx.fillText('Klankje', W/2, H * 0.13);
+  ctx.restore();
+
+  ctx.save();
+  ctx.font = `${Math.min(W * 0.042, 20)}px 'Segoe UI', system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(200,180,255,0.8)';
+  ctx.fillText('Kies een spel', W/2, H * 0.21);
+  ctx.restore();
+
+  const modes = [
+    { emoji:'🐾', label:'Echo', age:'2–3 jaar', sub:'Klanken & dieren', color:'#ff8c42', accent:'#ff6010', id:'mode1' },
+    { emoji:'🔍', label:'Klankdetective', age:'3–4,5 jaar', sub:'Welk woord begint met...', color:'#4090ff', accent:'#1060e0', id:'mode2' },
+    { emoji:'🧩', label:'Plakspel', age:'4,5–6 jaar', sub:'Klanken samenvoegen', color:'#40d4b0', accent:'#20a880', id:'mode3' },
+  ];
+
+  const btnH = Math.min(H * 0.14, 100);
+  const btnW = Math.min(W * 0.86, 480);
+  const startY = H * 0.30;
+  const gap = btnH + H * 0.04;
+
+  modes.forEach((m, i) => {
+    const bx = (W - btnW) / 2;
+    const by = startY + i * gap;
+
+    // card background
+    ctx.save();
+    roundRect(ctx, bx, by, btnW, btnH, 18);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fill();
+    ctx.strokeStyle = `${m.color}55`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    // accent bar left
+    ctx.save();
+    roundRect(ctx, bx, by, 7, btnH, 4);
+    const ag = ctx.createLinearGradient(0, by, 0, by + btnH);
+    ag.addColorStop(0, m.color);
+    ag.addColorStop(1, m.accent);
+    ctx.fillStyle = ag;
+    ctx.fill();
+    ctx.restore();
+
+    // emoji
+    ctx.save();
+    ctx.font = `${Math.min(btnH * 0.5, 40)}px serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(m.emoji, bx + 24, by + btnH/2);
+    ctx.restore();
+
+    // label
+    ctx.save();
+    ctx.font = `bold ${Math.min(btnH * 0.28, 22)}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(m.label, bx + 70, by + btnH * 0.3);
+    ctx.restore();
+
+    // age badge
+    ctx.save();
+    ctx.font = `${Math.min(btnH * 0.19, 14)}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = m.color;
+    ctx.fillText(m.age, bx + 70, by + btnH * 0.57);
+    ctx.restore();
+
+    // sub
+    ctx.save();
+    ctx.font = `${Math.min(btnH * 0.17, 13)}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(200,200,230,0.65)';
+    ctx.fillText(m.sub, bx + 70, by + btnH * 0.78);
+    ctx.restore();
+
+    // chevron
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    const cx2 = bx + btnW - 28, cy2 = by + btnH/2;
+    ctx.beginPath(); ctx.moveTo(cx2 - 6, cy2 - 8); ctx.lineTo(cx2 + 2, cy2); ctx.lineTo(cx2 - 6, cy2 + 8); ctx.stroke();
+    ctx.restore();
+
+    registerBtn(bx, by, btnW, btnH, m.id);
+  });
+}
+
+// ── BACK BUTTON ────────────────────────────────────────────────────────────
+function drawBackBtn() {
+  const bx = 12, by = 14, bw = 80, bh = 36;
+  ctx.save();
+  roundRect(ctx, bx, by, bw, bh, 10);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.font = `bold ${14}px 'Segoe UI', sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText('‹ Terug', bx + bw/2, by + bh/2);
+  ctx.restore();
+  registerBtn(bx, by, bw, bh, 'back');
+}
+
+// ── PROGRESS DOTS ──────────────────────────────────────────────────────────
+function drawProgress(current, total, color) {
+  const dotR = 5, gap = 16, totalW = total * (dotR*2 + gap) - gap;
+  const startX = W/2 - totalW/2;
+  const dotY = H - 24;
+  for (let i = 0; i < total; i++) {
+    ctx.beginPath();
+    ctx.arc(startX + i*(dotR*2+gap) + dotR, dotY, dotR, 0, Math.PI*2);
+    ctx.fillStyle = i < current ? color : 'rgba(255,255,255,0.2)';
+    ctx.fill();
+  }
+}
+
+// ── MODE 1 ─────────────────────────────────────────────────────────────────
+let m1HoverIdx = -1;
+let m1TapAnim = Array(6).fill(0);
+
+function drawMode1() {
+  drawBackBtn();
+
+  const title = 'Tik op een dier!';
+  drawGlowText(ctx, title, W/2, H * 0.07, Math.min(W * 0.06, 28), '#fff', 'rgba(180,120,255,0.5)');
+
+  const cols = W < 400 ? 2 : 3;
+  const rows = Math.ceil(ANIMALS.length / cols);
+  const padX = W * 0.06, padY = H * 0.12;
+  const cellW = (W - padX*2) / cols;
+  const cellH = (H - padY - H * 0.08) / rows;
+  const cardR = Math.min(cellW, cellH) * 0.38;
+
+  ANIMALS.forEach((a, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const cx = padX + col * cellW + cellW/2;
+    const cy = padY + row * cellH + cellH/2;
+    const anim = m1TapAnim[i];
+    const scale = 1 + anim * 0.12;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+
+    // card
+    const cr = Math.min(cellW, cellH) * 0.44;
+    ctx.shadowColor = `${a.color}88`;
+    ctx.shadowBlur = 12 + anim * 20;
+    roundRect(ctx, -cr, -cr, cr*2, cr*2, 18);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fill();
+    ctx.strokeStyle = `${a.color}${Math.round(0.5 * 255 + anim * 100).toString(16).padStart(2,'0')}`;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    a.draw(ctx, 0, -cardR*0.08, cardR * 0.72);
+
+    // name label
+    ctx.font = `bold ${Math.min(cr * 0.22, 14)}px 'Segoe UI', sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(a.name, 0, cr * 0.7);
+
+    ctx.restore();
+
+    registerBtn(cx - cellW/2 * 0.9, cy - cellH/2 * 0.9, cellW * 0.9, cellH * 0.9, `a${i}`);
+  });
+
+  // decay tap anim
+  for (let i = 0; i < m1TapAnim.length; i++) {
+    if (m1TapAnim[i] > 0) m1TapAnim[i] = Math.max(0, m1TapAnim[i] - 0.04);
+  }
+}
+
+// ── MODE 2 ─────────────────────────────────────────────────────────────────
+let m2LetterTimer = 0;
+const M2_LETTER_DURATION = 120; // frames
+
+function drawMode2() {
+  drawBackBtn();
+  drawProgress(mode2Round, 8, '#4090ff');
+
+  if (m2.showLetter) {
+    // big letter reveal
+    m2LetterTimer++;
+    const prog = Math.min(m2LetterTimer / M2_LETTER_DURATION, 1);
+    const alpha = prog < 0.15 ? prog/0.15 : prog > 0.85 ? (1-prog)/0.15 : 1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // glowing bubble
+    const br = Math.min(W, H) * 0.32;
+    const bg2 = ctx.createRadialGradient(W/2, H/2, br*0.1, W/2, H/2, br);
+    bg2.addColorStop(0, 'rgba(100,60,200,0.9)');
+    bg2.addColorStop(1, 'rgba(40,20,100,0.0)');
+    ctx.beginPath(); ctx.arc(W/2, H/2, br, 0, Math.PI*2);
+    ctx.fillStyle = bg2; ctx.fill();
+
+    ctx.shadowColor = '#a060ff'; ctx.shadowBlur = 40;
+    ctx.font = `bold ${Math.min(W*0.35, 180)}px 'Segoe UI', sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(m2.target.firstLetter.toUpperCase(), W/2, H*0.4);
+    ctx.shadowBlur = 0;
+
+    ctx.font = `${Math.min(W*0.06, 26)}px 'Segoe UI', sans-serif`;
+    ctx.fillStyle = '#c8aaff';
+    ctx.fillText(`deze letter zegt /${m2.target.firstLetter}/`, W/2, H*0.62);
+
+    ctx.font = `bold ${Math.min(W*0.05, 22)}px 'Segoe UI', sans-serif`;
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`de letter "${m2.target.firstLetter.toUpperCase()}"`, W/2, H*0.54);
+
+    ctx.restore();
+
+    if (m2LetterTimer >= M2_LETTER_DURATION) {
+      m2.showLetter = false;
+      m2LetterTimer = 0;
+      nextMode2Round();
+    }
+    return;
+  }
+
+  // target sound bubble
+  const bubY = H * 0.14;
+  const bubR = Math.min(W * 0.14, 65);
+  const bubG = ctx.createRadialGradient(W/2, bubY, bubR*0.1, W/2, bubY, bubR);
+  bubG.addColorStop(0, '#6040c0');
+  bubG.addColorStop(1, '#2010a0');
+  ctx.beginPath(); ctx.arc(W/2, bubY, bubR, 0, Math.PI*2);
+  ctx.fillStyle = bubG; ctx.fill();
+  ctx.strokeStyle = '#a080ff'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(W/2, bubY, bubR, 0, Math.PI*2); ctx.stroke();
+
+  drawGlowText(ctx, `/${m2.target.firstLetter}/`, W/2, bubY, Math.min(W*0.1, 48), '#fff', '#a080ff');
+  drawGlowText(ctx, 'Welk woord begint zo?', W/2, H * 0.26, Math.min(W * 0.05, 20), 'rgba(210,190,255,0.9)');
+
+  // 3 cards
+  const cols = 3, cardW = Math.min((W - 60) / cols, 160), cardH = cardW * 1.2;
+  const totalW = cols * cardW + (cols-1) * 14;
+  const startX = (W - totalW) / 2;
+  const cardY = H * 0.35;
+
+  m2.cards.forEach((card, i) => {
+    const cx = startX + i * (cardW + 14);
+    const isChosen = m2.chosen === i;
+    const isCorrect = i === m2.correctIdx;
+
+    let borderColor = `${card.color}88`;
+    let bg = 'rgba(255,255,255,0.06)';
+    if (isChosen) {
+      borderColor = isCorrect ? '#60ff80' : '#ff4060';
+      bg = isCorrect ? 'rgba(60,180,80,0.18)' : 'rgba(180,40,60,0.18)';
+    }
+
+    ctx.save();
+    ctx.shadowColor = borderColor;
+    ctx.shadowBlur = isChosen ? 22 : 8;
+    roundRect(ctx, cx, cardY, cardW, cardH, 16);
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.strokeStyle = borderColor; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    card.draw(ctx, cx + cardW/2, cardY + cardH * 0.42, cardW * 0.3);
+
+    ctx.font = `bold ${Math.min(cardW * 0.18, 14)}px 'Segoe UI', sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(card.word, cx + cardW/2, cardY + cardH * 0.86);
+    ctx.restore();
+
+    if (m2.chosen < 0) registerBtn(cx, cardY, cardW, cardH, `m2c${i}`);
+  });
+
+  // feedback
+  if (m2.result === 'wrong') {
+    drawGlowText(ctx, 'Probeer opnieuw! 💪', W/2, cardY + cardH + 40, Math.min(W*0.05, 20), '#ffa0c0');
+  } else if (m2.result === 'correct') {
+    drawGlowText(ctx, 'Super goed! ⭐', W/2, cardY + cardH + 40, Math.min(W*0.05, 20), '#80ff80', '#00ff00');
+  }
+}
+
+function nextMode2Round() {
+  mode2Round++;
+  if (mode2Round >= 8) {
+    state = 'done';
+    prevMode = 2;
+    speak('Goed gedaan! Je hebt alle ronden gespeeld!');
+    return;
+  }
+  initMode2Round();
+}
+
+// ── MODE 3 ─────────────────────────────────────────────────────────────────
+let m3BlockAnim = [0,0,0];
+let m3MergeAnim = 0;
+let m3MergePulse = 0;
+
+function drawMode3() {
+  drawBackBtn();
+  drawProgress(mode3Round, 8, '#40d4b0');
+
+  drawGlowText(ctx, 'Tik elke klank, dan plak!', W/2, H*0.08, Math.min(W*0.05, 20), 'rgba(200,240,230,0.85)');
+
+  const blockColors = ['#e06090','#6090e0','#60c890'];
+  const blockW = Math.min((W - 80) / 3, 120), blockH = blockW * 0.9;
+  const totalW = 3*blockW + 2*18;
+  const bx0 = (W - totalW) / 2;
+  const bY = H * 0.22;
+
+  if (m3.phase === 'blocks' || m3.phase === 'pick') {
+    m3.rd.phonemes.forEach((ph, i) => {
+      const bx = bx0 + i*(blockW+18);
+      const anim = m3BlockAnim[i];
+      const sc = 1 + anim * 0.1;
+
+      ctx.save();
+      ctx.translate(bx + blockW/2, bY + blockH/2);
+      ctx.scale(sc, sc);
+      ctx.translate(-blockW/2, -blockH/2);
+
+      ctx.shadowColor = `${blockColors[i]}aa`;
+      ctx.shadowBlur = 10 + anim * 18;
+      roundRect(ctx, 0, 0, blockW, blockH, 16);
+      const bg3 = ctx.createLinearGradient(0, 0, 0, blockH);
+      bg3.addColorStop(0, `${blockColors[i]}cc`);
+      bg3.addColorStop(1, `${blockColors[i]}55`);
+      ctx.fillStyle = bg3; ctx.fill();
+      ctx.strokeStyle = `${blockColors[i]}ff`; ctx.lineWidth = 2; ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.font = `bold ${Math.min(blockW * 0.38, 36)}px 'Segoe UI', sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 4;
+      ctx.fillText(`/${ph}/`, blockW/2, blockH/2);
+      ctx.restore();
+
+      if (m3.phase === 'blocks') registerBtn(bx, bY, blockW, blockH, `m3b${i}`);
+    });
+
+    // decay block anim
+    for (let i = 0; i < 3; i++) {
+      if (m3BlockAnim[i] > 0) m3BlockAnim[i] = Math.max(0, m3BlockAnim[i] - 0.05);
+    }
+
+    // merge button
+    if (m3.phase === 'blocks') {
+      m3MergePulse = (m3MergePulse + 0.04) % (Math.PI*2);
+      const pv = 0.5 + 0.5*Math.sin(m3MergePulse);
+      const mbW = Math.min(W*0.55, 220), mbH = Math.min(H*0.08, 56);
+      const mbX = (W-mbW)/2, mbY = bY + blockH + H*0.06;
+
+      const mg2 = ctx.createLinearGradient(mbX, 0, mbX+mbW, 0);
+      mg2.addColorStop(0, '#40d4b0');
+      mg2.addColorStop(1, '#20a880');
+
+      ctx.save();
+      ctx.shadowColor = `rgba(64,212,176,${0.5 + pv*0.4})`;
+      ctx.shadowBlur = 15 + pv*12;
+      roundRect(ctx, mbX, mbY, mbW, mbH, mbH/2);
+      ctx.fillStyle = mg2; ctx.fill();
+      ctx.restore();
+
+      ctx.font = `bold ${Math.min(mbH*0.42, 22)}px 'Segoe UI', sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('▶ Plak samen!', W/2, mbY + mbH/2);
+
+      registerBtn(mbX, mbY, mbW, mbH, 'm3merge');
+    }
+
+    // pick phase: 4 picture choices
+    if (m3.phase === 'pick') {
+      drawGlowText(ctx, `"${m3.rd.word}" — kies het plaatje!`, W/2, bY + blockH + H*0.06, Math.min(W*0.05,18), '#c0fff0');
+
+      const choiceW = Math.min((W-60)/2, 150), choiceH = choiceW * 1.1;
+      const choiceGap = 14;
+      const totalCW = 2*choiceW + choiceGap;
+      const cStartX = (W - totalCW)/2;
+      const choiceStartY = bY + blockH + H*0.13;
+
+      m3.choices.forEach((ch, i) => {
+        const col = i % 2, row = Math.floor(i/2);
+        const cx = cStartX + col*(choiceW+choiceGap);
+        const cy = choiceStartY + row*(choiceH+choiceGap);
+        const isChosen = m3.chosen === i;
+        const isCorrect = ch.word === m3.rd.word;
+
+        let borderCol = `${ch.color}88`;
+        let bg = 'rgba(255,255,255,0.06)';
+        if (isChosen) {
+          borderCol = isCorrect ? '#60ff80' : '#ff4060';
+          bg = isCorrect ? 'rgba(60,180,80,0.18)' : 'rgba(180,40,60,0.18)';
+        }
+
+        ctx.save();
+        ctx.shadowColor = borderCol; ctx.shadowBlur = isChosen ? 20 : 6;
+        roundRect(ctx, cx, cy, choiceW, choiceH, 14);
+        ctx.fillStyle = bg; ctx.fill();
+        ctx.strokeStyle = borderCol; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ch.draw(ctx, cx + choiceW/2, cy + choiceH*0.42, choiceW*0.28);
+
+        ctx.font = `bold ${Math.min(choiceW*0.16, 13)}px 'Segoe UI', sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff';
+        ctx.fillText(ch.word, cx + choiceW/2, cy + choiceH*0.85);
+        ctx.restore();
+
+        if (m3.chosen < 0) registerBtn(cx, cy, choiceW, choiceH, `m3p${i}`);
+      });
+
+      if (m3.result === 'wrong') {
+        drawGlowText(ctx, 'Probeer opnieuw! 💪', W/2, H*0.95, Math.min(W*0.05,18), '#ffa0c0');
+      }
+    }
+  }
+}
+
+// ── DONE SCREEN ────────────────────────────────────────────────────────────
+let doneAnim = 0;
+function drawDone() {
+  doneAnim++;
+  if (doneAnim % 12 === 0) burst(Math.random()*W, Math.random()*H*0.7, null);
+
+  const scale = Math.min(1, doneAnim/30);
+  ctx.save();
+  ctx.translate(W/2, H*0.35);
+  ctx.scale(scale, scale);
+
+  ctx.font = `bold ${Math.min(W*0.12, 72)}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#ffee00'; ctx.shadowBlur = 30;
+  ctx.fillStyle = '#fff';
+  ctx.fillText('🎉', 0, 0);
+  ctx.restore();
+
+  drawGlowText(ctx, 'Goed gedaan!', W/2, H*0.52, Math.min(W*0.1, 52), '#fff', '#a060ff');
+  drawGlowText(ctx, 'Alle ronden gespeeld!', W/2, H*0.62, Math.min(W*0.05, 22), 'rgba(200,180,255,0.9)');
+
+  const mbW = Math.min(W*0.6, 240), mbH = Math.min(H*0.08, 56);
+  const mbX = (W-mbW)/2, mbY = H*0.74;
+  const g2 = ctx.createLinearGradient(mbX, 0, mbX+mbW, 0);
+  g2.addColorStop(0,'#a060ff'); g2.addColorStop(1,'#6030d0');
+  ctx.save();
+  ctx.shadowColor = 'rgba(160,96,255,0.6)'; ctx.shadowBlur = 18;
+  roundRect(ctx, mbX, mbY, mbW, mbH, mbH/2);
+  ctx.fillStyle = g2; ctx.fill();
+  ctx.restore();
+  ctx.font = `bold ${Math.min(mbH*0.42, 22)}px 'Segoe UI', sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('Terug naar start', W/2, mbY + mbH/2);
+  registerBtn(mbX, mbY, mbW, mbH, 'home');
+}
+
+// ── PARTICLES DRAW ─────────────────────────────────────────────────────────
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ── MAIN DRAW ──────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  buttons = [];
+
+  updateBubbles();
+  updateParticles();
+
+  drawBackground();
+
+  if (state === 'start') drawStart();
+  else if (state === 'mode1') drawMode1();
+  else if (state === 'mode2') drawMode2();
+  else if (state === 'mode3') drawMode3();
+  else if (state === 'done') drawDone();
+
+  drawParticles();
+
+  requestAnimationFrame(draw);
+}
+
+// ── INPUT ──────────────────────────────────────────────────────────────────
+function handleTap(px, py) {
+  speechAllowed = true;
+
+  const id = hitTest(px, py);
+  if (!id) return;
+
+  if (id === 'back') {
+    state = 'start';
+    mode2Round = 0; mode3Round = 0;
+    m2 = {}; m3 = {};
+    m1TapAnim = Array(6).fill(0);
+    doneAnim = 0;
+    return;
+  }
+
+  if (id === 'home') {
+    state = 'start';
+    mode2Round = 0; mode3Round = 0;
+    doneAnim = 0;
+    return;
+  }
+
+  if (state === 'start') {
+    if (id === 'mode1') { state = 'mode1'; speak('Tik op een dier en hoor het geluid!'); }
+    else if (id === 'mode2') {
+      state = 'mode2';
+      mode2Round = 0; mode2Score = 0;
+      initMode2Round();
+    }
+    else if (id === 'mode3') {
+      state = 'mode3';
+      mode3Round = 0; mode3Score = 0;
+      initMode3Round();
+    }
+    return;
+  }
+
+  if (state === 'mode1') {
+    const m = id.match(/^a(\d+)$/);
+    if (m) {
+      const idx = +m[1];
+      const a = ANIMALS[idx];
+      speak(a.sound);
+      m1TapAnim[idx] = 1;
+      burst(px, py, a.color);
+    }
+    return;
+  }
+
+  if (state === 'mode2') {
+    if (m2.showLetter || m2.chosen >= 0) return;
+    const m = id.match(/^m2c(\d+)$/);
+    if (m) {
+      const idx = +m[1];
+      m2.chosen = idx;
+      if (idx === m2.correctIdx) {
+        m2.result = 'correct';
+        mode2Score++;
+        burst(px, py, '#80ff80');
+        speak(`Ja! ${m2.target.word} begint met /${m2.target.firstLetter}/!`);
+        // every 3 correct: letter reveal
+        if (mode2Score % 3 === 0) {
+          setTimeout(() => {
+            m2.showLetter = true;
+            m2LetterTimer = 0;
+            speak(`De letter ${m2.target.firstLetter.toUpperCase()}. Deze letter zegt /${m2.target.firstLetter}/.`, 0.75);
+          }, 900);
+        } else {
+          setTimeout(nextMode2Round, 1200);
+        }
+      } else {
+        m2.result = 'wrong';
+        speak('Probeer opnieuw!', 0.9);
+        setTimeout(() => {
+          m2.chosen = -1;
+          m2.result = null;
+        }, 1500);
+      }
+    }
+    return;
+  }
+
+  if (state === 'mode3') {
+    if (id.startsWith('m3b')) {
+      const idx = +id[3];
+      m3BlockAnim[idx] = 1;
+      speakSlow(m3.rd.phonemes[idx]);
+      return;
+    }
+    if (id === 'm3merge') {
+      m3.phase = 'pick';
+      speak(m3.rd.word, 0.75);
+      burst(W/2, H*0.45, '#40d4b0');
+      return;
+    }
+    if (id.startsWith('m3p')) {
+      if (m3.chosen >= 0) return;
+      const idx = +id[3];
+      m3.chosen = idx;
+      const chosen = m3.choices[idx];
+      if (chosen.word === m3.rd.word) {
+        m3.result = 'correct';
+        mode3Score++;
+        burst(px, py, '#60d4a0');
+        speak(`Super! ${m3.rd.word}!`);
+        setTimeout(() => {
+          mode3Round++;
+          if (mode3Round >= 8) {
+            state = 'done';
+            prevMode = 3;
+            speak('Goed gedaan! Je hebt alle ronden gespeeld!');
+          } else {
+            initMode3Round();
+          }
+        }, 1200);
+      } else {
+        m3.result = 'wrong';
+        speak('Probeer opnieuw!');
+        setTimeout(() => {
+          m3.chosen = -1;
+          m3.result = null;
+        }, 1500);
+      }
+      return;
+    }
+  }
+}
+
+gc.addEventListener('click', e => {
+  const r = gc.getBoundingClientRect();
+  handleTap(e.clientX - r.left, e.clientY - r.top);
+});
+
+gc.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = gc.getBoundingClientRect();
+  const t = e.changedTouches[0];
+  handleTap(t.clientX - r.left, t.clientY - r.top);
+}, {passive: false});
+
+// Kick off
+draw();
+</script>
+</body>
+</html>
