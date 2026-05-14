@@ -2,28 +2,40 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#020818">
 <title>Cosmic Merge</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box;}
-html,body{height:100dvh;max-height:100dvh;overflow:hidden;background:#000;font-family:'Segoe UI',Arial,sans-serif;color:#fff;user-select:none;}
-body{display:flex;flex-direction:column;height:100dvh;}
+html,body{
+  height:100dvh;max-height:100dvh;overflow:hidden;
+  background:#000;font-family:'Segoe UI',Arial,sans-serif;color:#fff;user-select:none;
+  overscroll-behavior:none;-webkit-overflow-scrolling:touch;
+}
+body{display:flex;flex-direction:column;height:100dvh;padding-bottom:env(safe-area-inset-bottom,0px);}
 #hud{
-  height:52px;flex-shrink:0;padding:0 14px;
+  flex-shrink:0;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-left:max(14px,env(safe-area-inset-left,0px));
+  padding-right:max(14px,env(safe-area-inset-right,0px));
+  padding-bottom:0;
+  min-height:52px;
   display:flex;align-items:center;justify-content:space-between;gap:8px;
   background:rgba(2,6,18,0.95);border-bottom:1px solid rgba(40,80,160,0.35);
 }
-.hc{display:flex;flex-direction:column;align-items:center;min-width:52px;}
-.hl{font-size:7px;letter-spacing:2px;color:#3a5080;text-transform:uppercase;margin-bottom:1px;}
-.hv{font-size:20px;font-weight:700;color:#b0c8ff;letter-spacing:1px;line-height:1;text-shadow:0 0 10px rgba(100,150,255,.4);}
+.hc{display:flex;flex-direction:column;align-items:center;min-width:44px;}
+.hl{font-size:clamp(6px,1.8vw,8px);letter-spacing:1px;color:#3a5080;text-transform:uppercase;margin-bottom:1px;}
+.hv{font-size:clamp(16px,5vw,22px);font-weight:700;color:#b0c8ff;letter-spacing:1px;line-height:1;text-shadow:0 0 10px rgba(100,150,255,.4);}
 #h-score-wrap{flex:1;text-align:center;}
-#h-score{font-size:26px;font-weight:700;color:#b0c8ff;text-shadow:0 0 12px rgba(100,150,255,.5);}
-#h-best{font-size:8px;color:#2a3a5a;letter-spacing:1px;margin-top:1px;}
+#h-score{font-size:clamp(20px,6vw,28px);font-weight:700;color:#b0c8ff;text-shadow:0 0 12px rgba(100,150,255,.5);}
+#h-best{font-size:clamp(7px,1.8vw,9px);color:#2a3a5a;letter-spacing:1px;margin-top:1px;}
 #h-next-cv{display:block;border-radius:50%;overflow:hidden;}
-#h-combo{font-size:13px;font-weight:700;color:#ffd060;text-shadow:0 0 10px rgba(255,200,60,.6);min-width:60px;text-align:center;}
-#wrap{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;}
-#gc{display:block;cursor:crosshair;}
+#h-combo{font-size:clamp(11px,3vw,14px);font-weight:700;color:#ffd060;text-shadow:0 0 10px rgba(255,200,60,.6);min-width:50px;text-align:center;}
+#wrap{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;}
+#gc{display:block;cursor:crosshair;touch-action:none;}
 .overlay{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   width:82%;max-width:320px;
@@ -925,15 +937,17 @@ gc.addEventListener('touchend',e=>{
 
 // ── Canvas fit ────────────────────────────────────────────────────────────
 function fitCanvas(){
-  const hudH=document.getElementById('hud').offsetHeight||52;
-  const cw=window.innerWidth;
-  const ch=window.innerHeight-hudH;
+  const wrap=document.getElementById('wrap');
+  const cw=wrap.clientWidth||window.innerWidth;
+  const ch=wrap.clientHeight||(window.innerHeight-52);
   let dw=cw,dh=cw*(H/W);
   if(dh>ch){dh=ch;dw=ch*(W/H);}
   gc.style.width=Math.floor(dw)+'px';
   gc.style.height=Math.floor(dh)+'px';
 }
 window.addEventListener('resize',fitCanvas);
+// Re-fit when iOS virtual keyboard or orientation changes settle
+window.addEventListener('orientationchange',()=>setTimeout(fitCanvas,300));
 
 // ── Init ──────────────────────────────────────────────────────────────────
 gc=document.getElementById('gc');
