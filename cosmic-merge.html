@@ -937,16 +937,15 @@ gc.addEventListener('touchend',e=>{
 
 // ── Canvas fit ────────────────────────────────────────────────────────────
 function fitCanvas(){
-  const wrap=document.getElementById('wrap');
-  const cw=wrap.clientWidth||window.innerWidth;
-  const ch=wrap.clientHeight||(window.innerHeight-52);
+  const hudH=document.getElementById('hud').offsetHeight||52;
+  const cw=window.innerWidth;
+  const ch=window.innerHeight-hudH;
   let dw=cw,dh=cw*(H/W);
   if(dh>ch){dh=ch;dw=ch*(W/H);}
   gc.style.width=Math.floor(dw)+'px';
   gc.style.height=Math.floor(dh)+'px';
 }
 window.addEventListener('resize',fitCanvas);
-// Re-fit when iOS virtual keyboard or orientation changes settle
 window.addEventListener('orientationchange',()=>setTimeout(fitCanvas,300));
 
 // ── Init ──────────────────────────────────────────────────────────────────
